@@ -1,24 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
-export const Route = createFileRoute("/")({
-  component: Index,
-});
-
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
-}
+import {useState} from 'react';
+import {createFileRoute,Link} from '@tanstack/react-router';
+import {ArrowRight,ChevronLeft,ChevronRight} from 'lucide-react';
+import {Button} from '@/components/ui/button';
+import {Benefits,ProductGrid,SectionHeading,TrustStrip} from '@/components/store/shared';
+import {products,pageHead} from '@/lib/store/catalogue';
+import campaign from '@/assets/campaign.jpg';
+export const Route=createFileRoute('/')({head:()=>pageHead('Premium Oversized T-Shirts','Discover THE YEARTH STORE. 240 GSM premium cotton oversized t-shirts, clean streetwear and everyday essentials. Free shipping above ₹999.'),component:Home});
+const slides=[{eyebrow:'PREMIUM OVERSIZED',heading:'T-SHIRTS',line:'240 GSM premium cotton.',copy:'Oversized fit. Everyday comfort.'},{eyebrow:'MADE FOR YOUR EVERYDAY',heading:'ESSENTIALS',line:'Considered colours. Clean lines.',copy:'Your wardrobe, simplified.'},{eyebrow:'YOUR FIT. YOUR WAY.',heading:'OVERSIZED',line:'A little room to be yourself.',copy:'Premium comfort. No compromises.'}];
+function Home(){const [slide,setSlide]=useState(0);const current=slides[slide];return <><section className={`hero campaign-slide-${slide}`} aria-label="Latest campaigns"><img className="hero-image" src={campaign} alt="Model wearing a premium black oversized YEARTH cotton t-shirt" width={1536} height={1024} fetchPriority="high"/><Button className="hero-prev" variant="ghost" size="icon" aria-label="Previous campaign" onClick={()=>setSlide((slide+2)%3)}><ChevronLeft/></Button><div className="container"><div className="hero-content" aria-live="polite"><span className="eyebrow">{current.eyebrow}</span><h1>{current.heading}</h1><div className="hero-rule"/><p className="hero-copy">{current.line}<br/>{current.copy}</p><Button size="lg" asChild><Link to="/collections/$slug" params={{slug:'t-shirts'}}>SHOP COLLECTION <ArrowRight/></Link></Button><div className="hero-indices">{slides.map((s,i)=><Button variant="ghost" key={s.heading} aria-label={`Campaign ${i+1}`} aria-pressed={i===slide} onClick={()=>setSlide(i)}>0{i+1}</Button>)}</div></div></div><Button className="hero-next" variant="ghost" size="icon" aria-label="Next campaign" onClick={()=>setSlide((slide+1)%3)}><ChevronRight/></Button><div className="hero-bottom-label">THE EVERYDAY COLLECTION / 2026</div></section><div className="benefit-band"><div className="container"><Benefits/></div></div><section className="container home-collection"><SectionHeading title="LATEST COLLECTIONS"/><ProductGrid items={products.slice(0,4)}/><p className="sample-note">Sample catalogue · Ratings shown are sample reviews.</p></section><TrustStrip/></>}
