@@ -1,7 +1,276 @@
-import {useState} from 'react';
-import {SlidersHorizontal,ChevronDown,LayoutGrid,List,ChevronLeft,ChevronRight} from 'lucide-react';
-import {Button} from '@/components/ui/button';
-import {Breadcrumb,ProductGrid,Modal} from './shared';
-import {products,colours,sizes,money,stock} from '@/lib/store/catalogue';
-export function Listing({collection='T-Shirts'}:{collection?:string}){const [selectedSizes,setSizes]=useState<string[]>([]),[selectedColours,setColours]=useState<string[]>([]),[categories,setCategories]=useState<string[]>([]),[price,setPrice]=useState(1499),[sort,setSort]=useState('Featured'),[list,setList]=useState(false),[sheet,setSheet]=useState(''),[page,setPage]=useState(1);const toggle=(value:string,values:string[],set:(v:string[])=>void)=>{set(values.includes(value)?values.filter(x=>x!==value):[...values,value]);setPage(1)};const clear=()=>{setSizes([]);setColours([]);setCategories([]);setPrice(1499);setPage(1)};const filtered=products.filter(p=>p.price<=price&&(!categories.length||categories.includes(p.category))&&(!selectedColours.length||selectedColours.includes(p.colour))&&(!selectedSizes.length||selectedSizes.some(s=>stock(p,p.colour,s)>0))).sort((a,b)=>sort==='Price: Low to High'?a.price-b.price:sort==='Price: High to Low'?b.price-a.price:sort==='Top Rated'?b.rating-a.rating:sort==='Newest'?products.indexOf(b)-products.indexOf(a):products.indexOf(a)-products.indexOf(b));const count=selectedSizes.length+selectedColours.length+categories.length+(price<1499?1:0);const sortControl=<select className="field sort-select" aria-label="Sort products" value={sort} onChange={e=>{setSort(e.target.value);setPage(1)}}>{['Featured','Newest','Price: Low to High','Price: High to Low','Top Rated'].map(s=><option key={s}>{s}</option>)}</select>;const filters=<div className="filter-groups"><div className="filter-heading"><b>FILTERS {count>0&&`(${count})`}</b><Button variant="link" size="sm" onClick={clear}>Clear all</Button></div><details open><summary>Category</summary>{['T-Shirts','Hoodies','Shirts','Bottoms','Accessories'].map(c=><label className="check-row" key={c}><input type="checkbox" checked={categories.includes(c)} onChange={()=>toggle(c,categories,setCategories)}/>{c}<small>{c==='T-Shirts'?8:0}</small></label>)}</details><details open><summary>Size</summary><div className="size-row">{sizes.map(s=><Button size="sm" key={s} variant={selectedSizes.includes(s)?'default':'outline'} aria-pressed={selectedSizes.includes(s)} onClick={()=>toggle(s,selectedSizes,setSizes)}>{s}</Button>)}</div></details><details open><summary>Color</summary>{colours.map(c=><label className="check-row" key={c}><input type="checkbox" checked={selectedColours.includes(c)} onChange={()=>toggle(c,selectedColours,setColours)}/><span className={`colour-dot swatch-${c.toLowerCase().replaceAll(' ','-')}`}/>{c}<small>{products.filter(p=>p.colour===c).length}</small></label>)}</details><details open><summary>Price Range</summary><input className="price-range" aria-label="Maximum price" type="range" min="249" max="1499" step="10" value={price} onChange={e=>{setPrice(Number(e.target.value));setPage(1)}}/><div className="range-labels"><span>₹249</span><span>{money(price)}</span></div></details></div>;
-return <><section className="collection-banner"><div className="container"><Breadcrumb name={collection}/><div className="page-title-row"><div><span className="eyebrow">THE EVERYDAY COLLECTION</span><h1>{collection.toUpperCase()}</h1><p>Premium oversized t-shirts for everyday comfort.</p></div><span>{filtered.length} Products</span></div></div></section><section className="container listing-layout"><aside className="filter-sidebar">{filters}</aside><div className="listing-main"><div className="mobile-filter-chips">{['Filters','Size','Color','Sort'].map(label=><Button key={label} variant={label==='Filters'?'default':'outline'} onClick={()=>setSheet(label)}>{label==='Filters'?<SlidersHorizontal/>:null}{label}{label==='Filters'&&count>0?` (${count})`:null}<ChevronDown/></Button>)}</div><div className="listing-toolbar"><div className="sort-wrap"><span>Sort by:</span>{sortControl}</div><div className="view-toggle"><Button variant={!list?'secondary':'ghost'} size="icon" aria-label="Grid view" aria-pressed={!list} onClick={()=>setList(false)}><LayoutGrid/></Button><Button variant={list?'secondary':'ghost'} size="icon" aria-label="List view" aria-pressed={list} onClick={()=>setList(true)}><List/></Button></div></div>{filtered.length?<ProductGrid items={filtered.slice((page-1)*6,page*6)} showSwatches list={list}/>:<div className="empty-state"><SlidersHorizontal/><h2>No pieces found</h2><p>Try opening up your filters a little.</p><Button onClick={clear}>Clear filters</Button></div>}{filtered.length>6&&<nav className="pagination" aria-label="Product pages"><Button variant="outline" size="icon" aria-label="Previous page" disabled={page===1} onClick={()=>setPage(page-1)}><ChevronLeft/></Button>{[1,2].map(n=><Button key={n} variant={n===page?'default':'outline'} aria-current={n===page?'page':undefined} onClick={()=>setPage(n)}>{n}</Button>)}<Button variant="outline" size="icon" aria-label="Next page" disabled={page===2} onClick={()=>setPage(page+1)}><ChevronRight/></Button></nav>}<p className="sample-note">8 sample styles · Ratings are sample reviews.</p></div></section><div className="mobile-bottom-filter"><Button variant="ghost" onClick={()=>setSheet('Filters')}><SlidersHorizontal/>Filters {count>0&&`(${count})`}</Button><Button variant="ghost" onClick={()=>setSheet('Sort')}><List/>Sort</Button></div><Modal open={!!sheet} onOpenChange={o=>{if(!o)setSheet('')}} title={sheet==='Sort'?'Sort by':'Refine your collection'} drawer>{sheet==='Sort'?sortControl:filters}<Button size="lg" onClick={()=>setSheet('')}>Show {filtered.length} products</Button></Modal></>}
+import { useState } from "react";
+import {
+  SlidersHorizontal,
+  ChevronDown,
+  LayoutGrid,
+  List,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Breadcrumb, ProductGrid, Modal } from "./shared";
+import { products, colours, sizes, money, stock } from "@/lib/store/catalogue";
+export function Listing({ collection = "T-Shirts" }: { collection?: string }) {
+  const [selectedSizes, setSizes] = useState<string[]>([]),
+    [selectedColours, setColours] = useState<string[]>([]),
+    [categories, setCategories] = useState<string[]>([]),
+    [price, setPrice] = useState(1499),
+    [sort, setSort] = useState("Featured"),
+    [list, setList] = useState(false),
+    [sheet, setSheet] = useState(""),
+    [page, setPage] = useState(1);
+  const toggle = (value: string, values: string[], set: (v: string[]) => void) => {
+    set(values.includes(value) ? values.filter((x) => x !== value) : [...values, value]);
+    setPage(1);
+  };
+  const clear = () => {
+    setSizes([]);
+    setColours([]);
+    setCategories([]);
+    setPrice(1499);
+    setPage(1);
+  };
+  const filtered = products
+    .filter(
+      (p) =>
+        p.price <= price &&
+        (!categories.length || categories.includes(p.category)) &&
+        (!selectedColours.length || selectedColours.includes(p.colour)) &&
+        (!selectedSizes.length || selectedSizes.some((s) => stock(p, p.colour, s) > 0)),
+    )
+    .sort((a, b) =>
+      sort === "Price: Low to High"
+        ? a.price - b.price
+        : sort === "Price: High to Low"
+          ? b.price - a.price
+          : sort === "Top Rated"
+            ? b.rating - a.rating
+            : sort === "Newest"
+              ? products.indexOf(b) - products.indexOf(a)
+              : products.indexOf(a) - products.indexOf(b),
+    );
+  const count =
+    selectedSizes.length + selectedColours.length + categories.length + (price < 1499 ? 1 : 0);
+  const sortControl = (
+    <select
+      className="field sort-select"
+      aria-label="Sort products"
+      value={sort}
+      onChange={(e) => {
+        setSort(e.target.value);
+        setPage(1);
+      }}
+    >
+      {["Featured", "Newest", "Price: Low to High", "Price: High to Low", "Top Rated"].map((s) => (
+        <option key={s}>{s}</option>
+      ))}
+    </select>
+  );
+  const filters = (
+    <div className="filter-groups">
+      <div className="filter-heading">
+        <b>FILTERS {count > 0 && `(${count})`}</b>
+        <Button variant="link" size="sm" onClick={clear}>
+          Clear all
+        </Button>
+      </div>
+      <details open>
+        <summary>Category</summary>
+        {["T-Shirts", "Hoodies", "Shirts", "Bottoms", "Accessories"].map((c) => (
+          <label className="check-row" key={c}>
+            <input
+              type="checkbox"
+              checked={categories.includes(c)}
+              onChange={() => toggle(c, categories, setCategories)}
+            />
+            {c}
+            <small>{c === "T-Shirts" ? 8 : 0}</small>
+          </label>
+        ))}
+      </details>
+      <details open>
+        <summary>Size</summary>
+        <div className="size-row">
+          {sizes.map((s) => (
+            <Button
+              size="sm"
+              key={s}
+              variant={selectedSizes.includes(s) ? "default" : "outline"}
+              aria-pressed={selectedSizes.includes(s)}
+              onClick={() => toggle(s, selectedSizes, setSizes)}
+            >
+              {s}
+            </Button>
+          ))}
+        </div>
+      </details>
+      <details open>
+        <summary>Color</summary>
+        {colours.map((c) => (
+          <label className="check-row" key={c}>
+            <input
+              type="checkbox"
+              checked={selectedColours.includes(c)}
+              onChange={() => toggle(c, selectedColours, setColours)}
+            />
+            <span className={`colour-dot swatch-${c.toLowerCase().replaceAll(" ", "-")}`} />
+            {c}
+            <small>{products.filter((p) => p.colour === c).length}</small>
+          </label>
+        ))}
+      </details>
+      <details open>
+        <summary>Price Range</summary>
+        <input
+          className="price-range"
+          aria-label="Maximum price"
+          type="range"
+          min="249"
+          max="1499"
+          step="10"
+          value={price}
+          onChange={(e) => {
+            setPrice(Number(e.target.value));
+            setPage(1);
+          }}
+        />
+        <div className="range-labels">
+          <span>₹249</span>
+          <span>{money(price)}</span>
+        </div>
+      </details>
+    </div>
+  );
+  return (
+    <>
+      <section className="collection-banner">
+        <div className="container">
+          <Breadcrumb name={collection} />
+          <div className="page-title-row">
+            <div>
+              <span className="eyebrow">THE EVERYDAY COLLECTION</span>
+              <h1>{collection.toUpperCase()}</h1>
+              <p>Premium oversized t-shirts for everyday comfort.</p>
+            </div>
+            <span>{filtered.length} Products</span>
+          </div>
+        </div>
+      </section>
+      <section className="container listing-layout">
+        <aside className="filter-sidebar">{filters}</aside>
+        <div className="listing-main">
+          <div className="mobile-filter-chips">
+            {["Filters", "Size", "Color", "Sort"].map((label) => (
+              <Button
+                key={label}
+                variant={label === "Filters" ? "default" : "outline"}
+                onClick={() => setSheet(label)}
+              >
+                {label === "Filters" ? <SlidersHorizontal /> : null}
+                {label}
+                {label === "Filters" && count > 0 ? ` (${count})` : null}
+                <ChevronDown />
+              </Button>
+            ))}
+          </div>
+          <div className="listing-toolbar">
+            <div className="sort-wrap">
+              <span>Sort by:</span>
+              {sortControl}
+            </div>
+            <div className="view-toggle">
+              <Button
+                variant={!list ? "secondary" : "ghost"}
+                size="icon"
+                aria-label="Grid view"
+                aria-pressed={!list}
+                onClick={() => setList(false)}
+              >
+                <LayoutGrid />
+              </Button>
+              <Button
+                variant={list ? "secondary" : "ghost"}
+                size="icon"
+                aria-label="List view"
+                aria-pressed={list}
+                onClick={() => setList(true)}
+              >
+                <List />
+              </Button>
+            </div>
+          </div>
+          {filtered.length ? (
+            <ProductGrid
+              items={filtered.slice((page - 1) * 6, page * 6)}
+              showSwatches
+              list={list}
+            />
+          ) : (
+            <div className="empty-state">
+              <SlidersHorizontal />
+              <h2>No pieces found</h2>
+              <p>Try opening up your filters a little.</p>
+              <Button onClick={clear}>Clear filters</Button>
+            </div>
+          )}
+          {filtered.length > 6 && (
+            <nav className="pagination" aria-label="Product pages">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Previous page"
+                disabled={page === 1}
+                onClick={() => setPage(page - 1)}
+              >
+                <ChevronLeft />
+              </Button>
+              {[1, 2].map((n) => (
+                <Button
+                  key={n}
+                  variant={n === page ? "default" : "outline"}
+                  aria-current={n === page ? "page" : undefined}
+                  onClick={() => setPage(n)}
+                >
+                  {n}
+                </Button>
+              ))}
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Next page"
+                disabled={page === 2}
+                onClick={() => setPage(page + 1)}
+              >
+                <ChevronRight />
+              </Button>
+            </nav>
+          )}
+          <p className="sample-note">8 sample styles · Ratings are sample reviews.</p>
+        </div>
+      </section>
+      <div className="mobile-bottom-filter">
+        <Button variant="ghost" onClick={() => setSheet("Filters")}>
+          <SlidersHorizontal />
+          Filters {count > 0 && `(${count})`}
+        </Button>
+        <Button variant="ghost" onClick={() => setSheet("Sort")}>
+          <List />
+          Sort
+        </Button>
+      </div>
+      <Modal
+        open={!!sheet}
+        onOpenChange={(o) => {
+          if (!o) setSheet("");
+        }}
+        title={sheet === "Sort" ? "Sort by" : "Refine your collection"}
+        drawer
+      >
+        {sheet === "Sort" ? sortControl : filters}
+        <Button size="lg" onClick={() => setSheet("")}>
+          Show {filtered.length} products
+        </Button>
+      </Modal>
+    </>
+  );
+}

@@ -82,9 +82,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "THE YEARTH STORE" },
-      { name: "description", content: "Premium oversized cotton essentials, made for the everyday." },
+      {
+        name: "description",
+        content: "Premium oversized cotton essentials, made for the everyday.",
+      },
       { property: "og:title", content: "THE YEARTH STORE" },
-      { property: "og:description", content: "Premium oversized cotton essentials, made for the everyday." },
+      {
+        property: "og:description",
+        content: "Premium oversized cotton essentials, made for the everyday.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -94,7 +100,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Oswald:wght@500;600;700&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Oswald:wght@500;600;700&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -123,7 +132,12 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <StoreProvider><StoreShell><Outlet /></StoreShell><Toaster position="bottom-right" /></StoreProvider>
+      <StoreProvider>
+        <StoreShell>
+          <Outlet />
+        </StoreShell>
+        <Toaster position="bottom-right" />
+      </StoreProvider>
     </QueryClientProvider>
   );
 }
