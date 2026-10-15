@@ -596,6 +596,7 @@
   right: 0;
   top: 0;
   transform: none;
+  translate: none;
   height: 100dvh;
   max-height: 100dvh;
   max-width: 420px;
