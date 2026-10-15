@@ -36,7 +36,7 @@ export function Modal({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={drawer ? "store-modal store-drawer" : "store-modal"}>
+      <DialogContent placement={drawer ? "drawer" : "center"} className={drawer ? "store-modal store-drawer" : "store-modal"}>
         <DialogTitle>{title}</DialogTitle>
         <DialogDescription>{description ?? "THE YEARTH STORE"}</DialogDescription>
         {children}
