@@ -1,4 +1,7 @@
 # YEARTH STORE implementation
+- [ ] Add protected admin sign-in and secure email-confirmed password setup for the designated administrator.
+- [ ] Connect admin products, orders, users, support messages, and settings to persistent data.
+- [ ] Verify admin access restrictions and persistence.
 - [x] Build shared visual system, shell, catalogue, and local prototype state.
 - [x] Build home, listings, product detail, cart, checkout, orders, account, and information pages.
 - [x] Verify shopping flow, order actions, filters, and responsive layouts at required widths.
