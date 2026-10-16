@@ -5,4 +5,6 @@
 - [x] Add reference-matched login, signup, verification, and password recovery pages.
 - [ ] Connect real customer authentication and private profiles, replacing demo account access.
 - [ ] Verify account flows, privacy boundaries, and mobile/desktop layouts.
-- [ ] Add signup country/mobile fields and linked SMS/email verification screens.
+- [ ] Add signup country/mobile fields and linked SMS/email verification screens.- [ ] Database: products/variants, orders, support messages, page views, settings, admin role.
+- [ ] Storefront reads products/settings from database; real orders, contact messages, traffic.
+- [ ] Admin panel: dashboard, orders, products, users, support, settings; admin-only menu link.

@@ -8,6 +8,27 @@
       "when": 1792138974359,
       "tag": "0000_customer_profiles_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792139797028,
+      "tag": "0001_store_backend",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792139828074,
+      "tag": "0002_product_image_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792139852091,
+      "tag": "0003_product_image_read_policy",
+      "breakpoints": true
     }
   ]
 }
