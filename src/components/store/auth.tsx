@@ -408,8 +408,21 @@ export function ForgotPasswordPage() {
 export function ResetPasswordPage() {
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
+  const [recovery, setRecovery] = useState(false);
+  useEffect(() => {
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    if (hash.get('type') === 'recovery') setRecovery(true);
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true);
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!recovery) {
+      toast.error('Open a valid password-reset email link first');
+      return;
+    }
     const problem = passwordProblem(password);
     if (problem) {
       toast.error(problem);
@@ -421,7 +434,9 @@ export function ResetPasswordPage() {
       return;
     }
     toast.success("Password updated");
-    navigate({ to: "/account" });
+    const { data } = await supabase.auth.getUser();
+    const role = data.user ? await supabase.rpc('has_role', { _user_id: data.user.id, _role: 'admin' }) : null;
+    navigate({ to: role?.data === true ? "/admin" : "/account" });
   };
   return (
     <AuthLayout eyebrow="ALMOST DONE" title={<>NEW<br />PASSWORD</>} text="Choose a strong password you haven’t used before." perks={memberPerks.slice(0, 2)}>
