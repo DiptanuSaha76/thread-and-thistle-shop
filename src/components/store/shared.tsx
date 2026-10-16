@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useStore } from "@/lib/store/state";
-import { products, money, colourImages, totals, type Product } from "@/lib/store/catalogue";
+import { products, money, imageFor, colourHex, productColours, totals, type Product } from "@/lib/store/catalogue";
 export function Modal({
   open,
   onOpenChange,
@@ -72,6 +72,7 @@ export function Swatches({
           variant="swatch"
           size="icon"
           className={`swatch swatch-${name.toLowerCase().replaceAll(" ", "-")} ${selected === name ? "selected" : ""}`}
+          style={colourHex(name) ? { backgroundColor: colourHex(name) } : undefined}
           aria-label={`Select ${name}`}
           title={name}
           aria-pressed={selected === name}
@@ -120,7 +121,7 @@ export function ProductCard({
       <div className="product-photo">
         <Link to="/products/$slug" params={{ slug: product.slug }}>
           <img
-            src={colour === product.colour ? product.image : colourImages[colour]}
+            src={imageFor(product, colour)}
             alt={product.name}
             width={480}
             height={1024}
@@ -265,7 +266,7 @@ export function Summary({ children, items = false }: { children?: ReactNode; ite
             return (
               p && (
                 <div className="summary-item" key={i}>
-                  <img src={colourImages[l.colour] ?? p.image} alt={p.name} />
+                  <img src={imageFor(p, l.colour)} alt={p.name} />
                   <div>
                     <b>{p.name}</b>
                     <small>
