@@ -4,7 +4,7 @@ import { ArrowLeft, Package, Check, Truck, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "./shared";
 import { useStore } from "@/lib/store/state";
-import { products, colourImages, money, type Order } from "@/lib/store/catalogue";
+import { products, imageFor, money, type Order } from "@/lib/store/catalogue";
 export function OrdersPage() {
   const store = useStore(),
     navigate = useNavigate();
@@ -32,7 +32,7 @@ export function OrdersPage() {
         <h1>My Orders</h1>
       </div>
       <p className="sample-note">
-        Prototype orders · Sample records and orders you place in this demo.
+        Orders placed with your signed-in account.
       </p>
       <nav className="order-tabs" aria-label="Order status">
         {["All Orders", "Processing", "Shipped", "Delivered", "Cancelled"].map((s) => (
@@ -70,7 +70,7 @@ export function OrdersPage() {
                 p && (
                   <div className="order-product" key={i}>
                     <img
-                      src={l.colour === p.colour ? p.image : colourImages[l.colour]}
+                      src={imageFor(p, l.colour)}
                       alt={p.name}
                     />
                     <div>
@@ -146,7 +146,7 @@ export function OrdersPage() {
               return (
                 p && (
                   <div className="summary-item" key={i}>
-                    <img src={colourImages[l.colour]} alt={p.name} />
+                    <img src={imageFor(p, l.colour)} alt={p.name} />
                     <div>
                       <b>{p.name}</b>
                       <small>
@@ -197,7 +197,7 @@ export function OrdersPage() {
           if (!o) setCancel(null);
         }}
         title="Cancel this order?"
-        description="This action cancels your demo order."
+        description="This action cancels your order."
       >
         <p>Order #{cancel?.id} has not shipped yet. Are you sure you want to cancel?</p>
         <Button

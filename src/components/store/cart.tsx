@@ -4,7 +4,7 @@ import { ArrowRight, Heart, Trash2, ShoppingBag, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Breadcrumb, Quantity, Summary, Benefits, Related } from "./shared";
 import { useStore } from "@/lib/store/state";
-import { products, money, colourImages, lineKey, totals } from "@/lib/store/catalogue";
+import { products, money, imageFor, lineKey, totals } from "@/lib/store/catalogue";
 export function CartPage() {
   const store = useStore();
   const [code, setCode] = useState(store.promo),
@@ -65,7 +65,7 @@ export function CartPage() {
                     <article className="cart-line" key={lineKey(l)}>
                       <Link to="/products/$slug" params={{ slug: p.slug }}>
                         <img
-                          src={l.colour === p.colour ? p.image : colourImages[l.colour]}
+                          src={imageFor(p, l.colour)}
                           alt={p.name}
                         />
                       </Link>

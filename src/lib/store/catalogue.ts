@@ -6,8 +6,37 @@ import backBlack from "@/assets/back-black.jpg";
 import purple from "@/assets/purple.jpg";
 import grey from "@/assets/grey.jpg";
 import backWhite from "@/assets/back-off-white.jpg";
-export const colours = ["Black", "Off-White", "Brown", "Olive Green", "Grey", "Purple"] as const;
-export const sizes = ["S", "M", "L", "XL", "XXL"];
+export const colours: string[] = ["Black", "Off-White", "Brown", "Olive Green", "Grey", "Purple"];
+export const sizes: string[] = ["S", "M", "L", "XL", "XXL"];
+export const assetByKey: Record<string, string> = { black, "off-white": white, brown, "olive-green": olive, "back-black": backBlack, purple, grey, "back-off-white": backWhite };
+export type ShopColour = { name: string; hex: string };
+export const shopSettings = {
+  categories: ["T-Shirts", "Hoodies", "Shirts", "Bottoms", "Accessories"],
+  colours: [["Black", "#111111"], ["Off-White", "#F2EEE6"], ["Brown", "#6B4A34"], ["Olive Green", "#5B6142"], ["Grey", "#8C8C8C"], ["Purple", "#5E4B7A"]].map(([name, hex]) => ({ name, hex })) as ShopColour[],
+  priceMin: 249,
+  priceMax: 1499,
+  filters: ["Category", "Size", "Color", "Price"],
+  freeShippingThreshold: 999,
+  shippingFee: 79,
+};
+export const allFilters = ["Category", "Size", "Color", "Price", "Availability", "Rating", "On Sale"];
+export type Variant = { id: string; colour: string; hex: string; size: string; stock: number; image?: string | null };
+/** Live variants by product id; empty until live records load. */
+export const variants = new Map<string, Variant[]>();
+export const colourHex = (name: string) => shopSettings.colours.find((c) => c.name === name)?.hex;
+export const productColours = (p: Product) => {
+  const list = [...new Set((variants.get(p.id) ?? []).map((v) => v.colour))];
+  return list.length ? list : [p.colour];
+};
+export const productSizes = (p: Product) => {
+  const list = [...new Set((variants.get(p.id) ?? []).map((v) => v.size))];
+  return list.length ? sizes.filter((s) => list.includes(s)).concat(list.filter((s) => !sizes.includes(s))) : sizes;
+};
+export function imageFor(p: Product | undefined, colour: string) {
+  if (!p) return colourImages[colour] ?? "";
+  const v = (variants.get(p.id) ?? []).find((x) => x.colour === colour && x.image);
+  return v?.image ?? (colour === p.colour ? p.image : colourImages[colour] ?? p.image);
+}
 export const colourImages: Record<string, string> = {
   Black: black,
   "Off-White": white,
@@ -27,6 +56,9 @@ export type Product = {
   image: string;
   badge?: string | undefined;
   category: string;
+  images?: string[];
+  compareAt?: number | null;
+  description?: string;
 };
 export const products: Product[] = [
   ["black", "Oversized Black Tee", 649, 4.8, 24, "Black", black],
@@ -62,6 +94,8 @@ export type Order = {
   id: string;
   createdAt: string;
   status: "Processing" | "Shipped" | "Delivered" | "Cancelled";
+  dbId?: string;
+  tracking?: string | null;
   items: CartLine[];
   subtotal: number;
   shipping: number;
@@ -77,11 +111,13 @@ export function totals(lines: CartLine[], promo = "") {
     (sum, l) => sum + (products.find((p) => p.id === l.productId)?.price ?? 0) * l.quantity,
     0,
   );
-  const shipping = subtotal === 0 || subtotal > 999 ? 0 : 79;
+  const shipping = subtotal === 0 || subtotal > shopSettings.freeShippingThreshold ? 0 : shopSettings.shippingFee;
   const discount = promo === "YEARTH10" ? Math.round(subtotal * 0.1) : 0;
   return { subtotal, shipping, discount, total: subtotal + shipping - discount };
 }
 export function stock(product: Product, colour: string, size: string) {
+  const live = variants.get(product.id);
+  if (live) return live.find((v) => v.colour === colour && v.size === size)?.stock ?? 0;
   return product.id === "purple" && colour === "Purple" && size === "XXL" ? 0 : 10;
 }
 export const demoOrders: Order[] = ["Delivered", "Shipped", "Processing"].map((status, i) => {
