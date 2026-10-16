@@ -15,6 +15,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { StoreProvider } from "@/lib/store/state";
 import { StoreShell } from "@/components/store/shell";
 import { Toaster } from "sonner";
+import { AuthProvider } from "@/lib/auth";
 
 function NotFoundComponent() {
   return (
@@ -132,12 +133,14 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+      <AuthProvider>
       <StoreProvider>
         <StoreShell>
           <Outlet />
         </StoreShell>
         <Toaster position="bottom-right" />
       </StoreProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
