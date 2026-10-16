@@ -15,6 +15,8 @@ import {
   Truck,
   UserRound,
   Zap,
+  Smartphone,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
@@ -22,6 +24,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
 import { passwordProblem, safeNext, useAuth } from "@/lib/auth";
 import campaign from "@/assets/auth-campaign.jpg";
+import { callingCountries, normalizePhone, signupDetailsSchema } from "@/lib/phone";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Perk = [ReactNode, string, string];
 const memberPerks: Perk[] = [
@@ -131,7 +135,9 @@ function useRedirectWhenSignedIn(next: string) {
     if (!ready || !user) return;
     const stored = sessionStorage.getItem("yearth-auth-next");
     sessionStorage.removeItem("yearth-auth-next");
-    navigate({ to: safeNext(stored ?? next), replace: true });
+    if (sessionStorage.getItem("yearth-pending-phone")) {
+      navigate({ to: "/verify", search: { email: user.email }, replace: true });
+    } else navigate({ to: safeNext(stored ?? next), replace: true });
   }, [ready, user, next, navigate]);
 }
 
@@ -179,10 +185,18 @@ export function SignupPage({ next: rawNext }: { next?: string | undefined }) {
   const [first, setFirst] = useState(""),
     [last, setLast] = useState(""),
     [email, setEmail] = useState(""),
+    [country, setCountry] = useState("IN"),
+    [mobile, setMobile] = useState(""),
     [password, setPassword] = useState(""),
     [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    const phone = normalizePhone(country, mobile);
+    const details = signupDetailsSchema.safeParse({ first, last, email, phone });
+    if (!details.success) {
+      toast.error(phone ? (details.error.issues[0]?.message ?? "Check your details") : "Enter a valid mobile number for the selected country");
+      return;
+    }
     const problem = passwordProblem(password);
     if (problem) {
       toast.error(problem);
@@ -193,7 +207,7 @@ export function SignupPage({ next: rawNext }: { next?: string | undefined }) {
       email: email.trim(),
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/login?next=${encodeURIComponent(next)}`,
+        emailRedirectTo: `${window.location.origin}/verify?email=${encodeURIComponent(email.trim())}`,
         data: { name: `${first.trim()} ${last.trim()}`.trim() },
       },
     });
@@ -202,6 +216,8 @@ export function SignupPage({ next: rawNext }: { next?: string | undefined }) {
       toast.error(error.message);
       return;
     }
+    sessionStorage.setItem("yearth-pending-phone", details.data.phone);
+    sessionStorage.setItem("yearth-auth-next", next);
     navigate({ to: "/verify", search: { email: email.trim() } });
   };
   return (
@@ -212,6 +228,19 @@ export function SignupPage({ next: rawNext }: { next?: string | undefined }) {
         <div className="auth-row">
           <Field id="su-first" label="First Name" icon={<UserRound />} value={first} onChange={setFirst} placeholder="Enter your first name" autoComplete="given-name" />
           <Field id="su-last" label="Last Name" icon={<UserRound />} value={last} onChange={setLast} placeholder="Enter your last name" autoComplete="family-name" />
+        </div>
+        <div className="auth-field">
+          <label htmlFor="su-mobile">Mobile Number</label>
+          <div className="auth-input auth-phone-input">
+            <Smartphone />
+            <Select value={country} onValueChange={setCountry}>
+              <SelectTrigger className="auth-country" aria-label="Country calling code"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {callingCountries.map((item) => <SelectItem key={item.iso} value={item.iso}>{item.flag} {item.dial}<span className="sr-only"> {item.name}</span></SelectItem>)}
+              </SelectContent>
+            </Select>
+            <input id="su-mobile" type="tel" inputMode="tel" autoComplete="tel-national" placeholder="Enter your mobile number" value={mobile} onChange={(e) => setMobile(e.target.value)} maxLength={20} required />
+          </div>
         </div>
         <Field id="su-email" label="Email Address" icon={<Mail />} type="email" value={email} onChange={setEmail} placeholder="you@example.com" autoComplete="email" />
         <Field id="su-password" label="Password" icon={<Lock />} type="password" value={password} onChange={setPassword} placeholder="Create a password" autoComplete="new-password" hint="Must be at least 8 characters with a number and a letter" />
@@ -224,11 +253,49 @@ export function SignupPage({ next: rawNext }: { next?: string | undefined }) {
 }
 
 export function VerifyPage({ email }: { email?: string | undefined }) {
-  useRedirectWhenSignedIn("/account");
+  const { user, ready } = useAuth();
   const navigate = useNavigate();
   const [code, setCode] = useState(""),
     [busy, setBusy] = useState(false),
-    [wait, setWait] = useState(30);
+    [wait, setWait] = useState(30),
+    [phone, setPhone] = useState(""),
+    [channel, setChannel] = useState<"sms" | "email">("email"),
+    [smsSent, setSmsSent] = useState(false),
+    [notice, setNotice] = useState("");
+  useEffect(() => {
+    const stored = sessionStorage.getItem("yearth-pending-phone");
+    if (stored && /^\+[1-9]\d{7,14}$/.test(stored)) {
+      setPhone(stored);
+      setChannel("sms");
+    }
+  }, []);
+  const finish = () => {
+    const next = safeNext(sessionStorage.getItem("yearth-auth-next"));
+    sessionStorage.removeItem("yearth-pending-phone");
+    sessionStorage.removeItem("yearth-auth-next");
+    navigate({ to: next, replace: true });
+  };
+  const sendSms = async () => {
+    if (!user || !phone) {
+      setNotice("Confirm your email first, then return here to verify your mobile number.");
+      return;
+    }
+    setBusy(true);
+    setNotice("");
+    try {
+      const { error } = await supabase.auth.updateUser({ phone });
+      if (error) {
+        setNotice("SMS verification is currently unavailable. You can continue with your verified email.");
+        return;
+      }
+      setSmsSent(true);
+      setWait(30);
+      setCode("");
+      toast.success("A verification code has been sent to your mobile");
+    } catch {
+      setNotice("Couldn't send the code. Please try again.");
+    } finally { setBusy(false); }
+  };
   useEffect(() => {
     if (wait <= 0) return;
     const t = setTimeout(() => setWait(wait - 1), 1000);
@@ -236,14 +303,21 @@ export function VerifyPage({ email }: { email?: string | undefined }) {
   }, [wait]);
   const verify = async (e: FormEvent) => {
     e.preventDefault();
-    if (!email || code.length !== 6) return;
+    if (code.length !== 6 || (channel === "email" && !email) || (channel === "sms" && (!phone || !smsSent))) return;
     setBusy(true);
-    const { error } = await supabase.auth.verifyOtp({ email, token: code, type: "signup" });
+    const { error } = channel === "sms"
+      ? await supabase.auth.verifyOtp({ phone, token: code, type: "phone_change" })
+      : await supabase.auth.verifyOtp({ email: email ?? "", token: code, type: "signup" });
     setBusy(false);
     if (error) toast.error("That code is invalid or has expired");
-    else toast.success("Email verified — welcome to YEARTH");
+    else {
+      toast.success(channel === "sms" ? "Mobile number verified" : "Email verified — welcome to YEARTH");
+      if (channel === "sms" || !phone) finish();
+    }
   };
   const resend = async () => {
+    if (busy || wait > 0) return;
+    if (channel === "sms") { await sendSms(); return; }
     if (!email) return;
     const { error } = await supabase.auth.resend({ type: "signup", email });
     if (error) {
@@ -256,25 +330,30 @@ export function VerifyPage({ email }: { email?: string | undefined }) {
   return (
     <AuthLayout
       eyebrow="ALMOST THERE"
-      title={<>VERIFY<br />YOUR EMAIL</>}
-      text="We’ve sent a verification email to keep your account safe."
+      title={<>VERIFY<br />YOUR {channel === "sms" ? "NUMBER" : "EMAIL"}</>}
+      text={channel === "sms" ? (smsSent ? "We’ve sent a 6-digit code to keep your account safe." : "Verify your mobile number to keep your account safe.") : "We’ve sent a verification email to keep your account safe."}
       perks={[
         [<ShieldCheck key="s" />, "Secure Verification", "Keeps your account safe"],
         [<Zap key="z" />, "Quick & Easy", "Takes just a few seconds"],
         [<Lock key="l" />, "Your Privacy", "Your data is always safe with us"],
       ]}
     >
-      <button type="button" className="auth-back" onClick={() => navigate({ to: "/signup" })}><ArrowLeft /> Back</button>
-      <h1>Verify Your Email</h1>
-      <p className="auth-sub">Open the link in your email, or enter the 6-digit code if it includes one.</p>
-      {email ? (
+      <Button variant="ghost" type="button" className="auth-back" onClick={() => navigate({ to: "/signup" })}><ArrowLeft /> Back</Button>
+      <h1>Verify Your {channel === "sms" ? "Number" : "Email"}</h1>
+      <p className="auth-sub">{channel === "sms" ? (smsSent ? "We’ve sent a 6-digit OTP to your mobile number." : user ? "Send a code to confirm your mobile number." : "Confirm the email we sent you first, then verify your mobile number.") : user ? "Your email is verified." : "Open the link in your email, or enter the 6-digit code if it includes one."}</p>
+      {email || phone ? (
         <>
           <div className="auth-target">
-            <Mail />
-            <b>{email}</b>
+            {channel === "sms" ? <Smartphone /> : <Mail />}
+            <b>{channel === "sms" ? phone : email}</b>
             <Link to="/signup">Edit</Link>
           </div>
-          <form onSubmit={verify} className="auth-form">
+          {notice && <p className="auth-notice" role="status">{notice}</p>}
+          {channel === "email" && user ? (
+            <Button size="lg" onClick={finish}>Continue with verified email <ArrowRight /></Button>
+          ) : channel === "sms" && !smsSent ? (
+            <Button size="lg" disabled={busy || !ready} onClick={sendSms}>{busy ? "Sending…" : "Send SMS code"} <ArrowRight /></Button>
+          ) : <form onSubmit={verify} className="auth-form">
             <InputOTP maxLength={6} value={code} onChange={setCode} aria-label="Verification code" containerClassName="auth-otp">
               <InputOTPGroup>
                 {[0, 1, 2, 3, 4, 5].map((i) => <InputOTPSlot key={i} index={i} />)}
@@ -282,13 +361,14 @@ export function VerifyPage({ email }: { email?: string | undefined }) {
             </InputOTP>
             <p className="auth-resend">
               Didn’t receive it?{" "}
-              <button type="button" onClick={resend} disabled={wait > 0}>Resend</button>
+              <Button variant="link" type="button" onClick={resend} disabled={wait > 0 || busy}>Resend OTP</Button>
               {wait > 0 && ` in 00:${String(wait).padStart(2, "0")}`}
             </p>
             <Button size="lg" type="submit" disabled={busy || code.length !== 6}>{busy ? "Verifying…" : "Verify & Continue"} <ArrowRight /></Button>
-          </form>
+          </form>}
           <div className="auth-or"><span>OR</span></div>
-          <Button variant="outline" size="lg" asChild className="auth-social"><Link to="/login">I clicked the link — Login</Link></Button>
+          {phone && <Button variant="outline" size="lg" className="auth-social" disabled={busy} onClick={() => { setChannel(channel === "sms" ? "email" : "sms"); setCode(""); setNotice(""); }}>{channel === "sms" ? <Mail /> : <Smartphone />} {channel === "sms" ? "Get OTP on Email Instead" : "Verify Mobile Instead"}</Button>}
+          {channel === "email" && !user && <Button variant="outline" size="lg" asChild className="auth-social"><Link to="/login">I clicked the link — Login</Link></Button>}
         </>
       ) : (
         <p className="auth-switch"><Link to="/signup">Create an account</Link> to receive a verification email.</p>
