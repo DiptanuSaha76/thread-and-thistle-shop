@@ -1,7 +1,7 @@
 import { createServerFn, createMiddleware } from '@tanstack/react-start';
 import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
 import { adminRoleAllowed, productInput, orderInput, supportInput, settingsInput } from './rules';
-const requireAdmin = createMiddleware().middleware([requireSupabaseAuth]).server(async ({ context, next }) => {
+const requireAdmin = createMiddleware({ type: 'function' }).middleware([requireSupabaseAuth]).server(async ({ context, next }) => {
   const { data, error } = await context.supabase.rpc('has_role', { _user_id: context.userId, _role: 'admin' });
   if (error || !adminRoleAllowed(data)) throw new Error('Admin access required');
   return next();

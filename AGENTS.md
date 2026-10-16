@@ -10,6 +10,8 @@
 <!-- LOVABLE:END -->
 
 ## Store architecture
+- Admin operations use authenticated server functions with a database role check before every read or write; customer profiles expose only name and email to administrators.
+- Admin password setup uses email-confirmed signup or recovery links; never embed credentials or grant access from client-side email matching.
 - Keep the TanStack file-route shell in the root with the shared StoreProvider so cart and wishlist remain synchronized across pages.
 - Keep catalogue, variant stock, currency formatting, and total calculations centralized in src/lib/store to avoid inconsistent commerce arithmetic.
 - Persist this explicit front-end prototype in browser storage only after hydration, validate restored data, and keep demo order/payment flows separate from production services.
