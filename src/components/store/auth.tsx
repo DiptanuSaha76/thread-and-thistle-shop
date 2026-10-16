@@ -135,7 +135,7 @@ function useRedirectWhenSignedIn(next: string) {
   }, [ready, user, next, navigate]);
 }
 
-export function LoginPage({ next: rawNext }: { next?: string }) {
+export function LoginPage({ next: rawNext }: { next?: string | undefined }) {
   const next = safeNext(rawNext);
   useRedirectWhenSignedIn(next);
   const navigate = useNavigate();
@@ -172,7 +172,7 @@ export function LoginPage({ next: rawNext }: { next?: string }) {
   );
 }
 
-export function SignupPage({ next: rawNext }: { next?: string }) {
+export function SignupPage({ next: rawNext }: { next?: string | undefined }) {
   const next = safeNext(rawNext);
   useRedirectWhenSignedIn(next);
   const navigate = useNavigate();
@@ -223,7 +223,7 @@ export function SignupPage({ next: rawNext }: { next?: string }) {
   );
 }
 
-export function VerifyPage({ email }: { email?: string }) {
+export function VerifyPage({ email }: { email?: string | undefined }) {
   useRedirectWhenSignedIn("/account");
   const navigate = useNavigate();
   const [code, setCode] = useState(""),
