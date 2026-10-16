@@ -135,7 +135,7 @@ function useRedirectWhenSignedIn(next: string) {
   }, [ready, user, next, navigate]);
 }
 
-export function LoginPage({ next: rawNext }: { next?: string }) {
+export function LoginPage({ next: rawNext }: { next?: string | undefined }) {
   const next = safeNext(rawNext);
   useRedirectWhenSignedIn(next);
   const navigate = useNavigate();
@@ -147,7 +147,10 @@ export function LoginPage({ next: rawNext }: { next?: string }) {
     setBusy(true);
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setBusy(false);
-    if (!error) return toast.success("Welcome back");
+    if (!error) {
+      toast.success("Welcome back");
+      return;
+    }
     if (/confirm/i.test(error.message)) {
       toast("Please verify your email first");
       navigate({ to: "/verify", search: { email: email.trim() } });
@@ -169,7 +172,7 @@ export function LoginPage({ next: rawNext }: { next?: string }) {
   );
 }
 
-export function SignupPage({ next: rawNext }: { next?: string }) {
+export function SignupPage({ next: rawNext }: { next?: string | undefined }) {
   const next = safeNext(rawNext);
   useRedirectWhenSignedIn(next);
   const navigate = useNavigate();
@@ -181,7 +184,10 @@ export function SignupPage({ next: rawNext }: { next?: string }) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const problem = passwordProblem(password);
-    if (problem) return toast.error(problem);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     setBusy(true);
     const { error } = await supabase.auth.signUp({
       email: email.trim(),
@@ -192,7 +198,10 @@ export function SignupPage({ next: rawNext }: { next?: string }) {
       },
     });
     setBusy(false);
-    if (error) return toast.error(error.message);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     navigate({ to: "/verify", search: { email: email.trim() } });
   };
   return (
@@ -214,7 +223,7 @@ export function SignupPage({ next: rawNext }: { next?: string }) {
   );
 }
 
-export function VerifyPage({ email }: { email?: string }) {
+export function VerifyPage({ email }: { email?: string | undefined }) {
   useRedirectWhenSignedIn("/account");
   const navigate = useNavigate();
   const [code, setCode] = useState(""),
@@ -237,7 +246,10 @@ export function VerifyPage({ email }: { email?: string }) {
   const resend = async () => {
     if (!email) return;
     const { error } = await supabase.auth.resend({ type: "signup", email });
-    if (error) return toast.error(error.message);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     toast.success("A new verification email is on its way");
     setWait(30);
   };
@@ -291,7 +303,10 @@ export function ForgotPasswordPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/reset-password` });
-    if (error) return toast.error(error.message);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     setSent(true);
   };
   return (
@@ -316,9 +331,15 @@ export function ResetPasswordPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const problem = passwordProblem(password);
-    if (problem) return toast.error(problem);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     const { error } = await supabase.auth.updateUser({ password });
-    if (error) return toast.error("This reset link is invalid or has expired");
+    if (error) {
+      toast.error("This reset link is invalid or has expired");
+      return;
+    }
     toast.success("Password updated");
     navigate({ to: "/account" });
   };
