@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Modal, ProductGrid } from "./shared";
 import { useStore } from "@/lib/store/state";
+import { useAuth } from "@/lib/auth";
 import { products } from "@/lib/store/catalogue";
 const nav = [
   ["/", "HOME"],
@@ -23,6 +24,7 @@ const nav = [
 ] as const;
 export function StoreShell({ children }: { children: ReactNode }) {
   const store = useStore();
+  const { user, signOut } = useAuth();
   const [menu, setMenu] = useState(false),
     [search, setSearch] = useState(false),
     [wish, setWish] = useState(false),
@@ -56,7 +58,7 @@ export function StoreShell({ children }: { children: ReactNode }) {
               <Search />
             </Button>
             <Button size="icon" variant="ghost" asChild>
-              <Link to="/account" aria-label="Account">
+              <Link to={user ? "/account" : "/login"} aria-label={user ? "Account" : "Login or sign up"}>
                 <UserRound />
               </Link>
             </Button>
@@ -145,18 +147,18 @@ export function StoreShell({ children }: { children: ReactNode }) {
           >
             <Heart /> Wishlist ({store.wishlist.length})
           </Button>
-          {store.profile ? (
+          {user ? (
             <Button
               variant="ghost"
               onClick={() => {
-                store.setProfile("");
                 setMenu(false);
+                void signOut();
               }}
             >
-              Leave demo account
+              Log out
             </Button>
           ) : (
-            <Link to="/account" onClick={() => setMenu(false)}>
+            <Link to="/login" onClick={() => setMenu(false)}>
               Login / Sign Up <ArrowRight size={18} />
             </Link>
           )}
