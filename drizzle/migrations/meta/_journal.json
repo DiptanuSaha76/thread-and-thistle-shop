@@ -15,6 +15,13 @@
       "when": 1792141513835,
       "tag": "0001_allow_admin_initial_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792142699988,
+      "tag": "0002_shop_settings_and_images",
+      "breakpoints": true
     }
   ]
 }

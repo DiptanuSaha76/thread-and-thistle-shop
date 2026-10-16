@@ -237,6 +237,7 @@ export type Database = {
           id: string
           image_key: string | null
           image_url: string | null
+          images: string[]
           name: string
           price: number
           primary_colour: string
@@ -258,6 +259,7 @@ export type Database = {
           id?: string
           image_key?: string | null
           image_url?: string | null
+          images?: string[]
           name: string
           price: number
           primary_colour?: string
@@ -279,6 +281,7 @@ export type Database = {
           id?: string
           image_key?: string | null
           image_url?: string | null
+          images?: string[]
           name?: string
           price?: number
           primary_colour?: string
@@ -344,42 +347,60 @@ export type Database = {
       store_settings: {
         Row: {
           announcement: string
+          categories: string[]
           cod_enabled: boolean
+          colours: Json
+          filters: string[]
           free_shipping_threshold: number
           hero_eyebrow: string
           hero_text: string
           hero_title: string
           id: number
+          price_max: number
+          price_min: number
           razorpay_enabled: boolean
           shipping_fee: number
+          sizes: string[]
           store_name: string
           support_email: string
           updated_at: string
         }
         Insert: {
           announcement?: string
+          categories?: string[]
           cod_enabled?: boolean
+          colours?: Json
+          filters?: string[]
           free_shipping_threshold?: number
           hero_eyebrow?: string
           hero_text?: string
           hero_title?: string
           id?: number
+          price_max?: number
+          price_min?: number
           razorpay_enabled?: boolean
           shipping_fee?: number
+          sizes?: string[]
           store_name?: string
           support_email?: string
           updated_at?: string
         }
         Update: {
           announcement?: string
+          categories?: string[]
           cod_enabled?: boolean
+          colours?: Json
+          filters?: string[]
           free_shipping_threshold?: number
           hero_eyebrow?: string
           hero_text?: string
           hero_title?: string
           id?: number
+          price_max?: number
+          price_min?: number
           razorpay_enabled?: boolean
           shipping_fee?: number
+          sizes?: string[]
           store_name?: string
           support_email?: string
           updated_at?: string
