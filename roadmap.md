@@ -5,3 +5,4 @@
 - [x] Add reference-matched login, signup, verification, and password recovery pages.
 - [ ] Connect real customer authentication and private profiles, replacing demo account access.
 - [ ] Verify account flows, privacy boundaries, and mobile/desktop layouts.
+- [ ] Add signup country/mobile fields and linked SMS/email verification screens.
