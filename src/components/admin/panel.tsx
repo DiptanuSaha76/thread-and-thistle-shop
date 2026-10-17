@@ -35,9 +35,9 @@ export function AdminPanel() {
     finally { setSaving(false); }
   }
   if (!ready) return <section className="container py-16">Loading…</section>;
-  if (!user) return <section className="container py-16 space-y-4"><h1>Store administration</h1><Button asChild><Link to="/admin/login">Admin sign-in</Link></Button></section>;
+  if (!user) return <section className="container py-16 space-y-4"><h1>Store administration</h1><Button asChild><Link to="/login" search={{ next: "/admin" }}>Sign in</Link></Button></section>;
   if (query.isPending) return <section className="container py-16">Checking admin access…</section>;
-  if (query.isError || !query.data) return <section className="container py-16 space-y-4"><h1>Admin access required</h1><p>This account cannot access store administration.</p><Button onClick={() => void signOut()}>Sign out</Button><Button variant="outline" asChild><Link to="/admin/login">Admin sign-in</Link></Button></section>;
+  if (query.isError || !query.data) return <section className="container py-16 space-y-4"><h1>Admin access required</h1><p>This account cannot access store administration.</p><Button onClick={() => void signOut()}>Sign out</Button><Button variant="outline" asChild><Link to="/login" search={{ next: "/admin" }}>Sign in</Link></Button></section>;
   const data = query.data;
   const live = data.orders.filter(o => o.status !== 'Cancelled');
   const revenue = live.reduce((n, o) => n + o.total, 0);

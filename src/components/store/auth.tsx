@@ -137,7 +137,11 @@ function useRedirectWhenSignedIn(next: string) {
     sessionStorage.removeItem("yearth-auth-next");
     if (sessionStorage.getItem("yearth-pending-phone")) {
       navigate({ to: "/verify", search: { email: user.email }, replace: true });
-    } else navigate({ to: safeNext(stored ?? next), replace: true });
+    } else {
+      void supabase.rpc("has_role", { _user_id: user.id, _role: "admin" }).then(({ data }) => {
+        navigate({ to: data === true && !stored ? "/admin" : safeNext(stored ?? next), replace: true });
+      });
+    }
   }, [ready, user, next, navigate]);
 }
 
