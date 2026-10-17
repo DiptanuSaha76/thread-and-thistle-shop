@@ -12,6 +12,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { Summary, Benefits } from "./shared";
 import { useStore } from "@/lib/store/state";
 import { totals, money, type Address, type Order } from "@/lib/store/catalogue";
@@ -110,17 +111,14 @@ export function CheckoutPage() {
   const place = async () => {
     if (busy || !validate() || !store.cart.length) return;
     setBusy(true);
-    await new Promise((r) => setTimeout(r, 600));
-    const order: Order = {
-      id: "YRT" + Date.now().toString().slice(-8),
-      createdAt: new Date().toISOString(),
-      status: "Processing",
-      items: [...store.cart],
-      ...t,
-      shippingAddress: { ...address },
-      paymentMethod: payment,
-    };
-    store.place(order);
+    let order: Order;
+    try {
+      order = await store.placeOrder({ ...address }, payment);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Order could not be placed");
+      setBusy(false);
+      return;
+    }
     setPlaced(order);
     if (save)
       try {
@@ -137,10 +135,10 @@ export function CheckoutPage() {
         <div className="confirmation-icon">
           <Check size={36} />
         </div>
-        <span className="eyebrow">DEMO ORDER CONFIRMED</span>
+        <span className="eyebrow">ORDER CONFIRMED</span>
         <h1>Good things are on their way.</h1>
         <p>Order #{placed.id}</p>
-        <p>This is a prototype order. No payment was taken and no items will be shipped.</p>
+        <p>We have received your order and will update you as it ships.</p>
         <div className="confirmation-summary">
           <span>{placed.items.reduce((n, l) => n + l.quantity, 0)} items</span>
           <b>{money(placed.total)}</b>
