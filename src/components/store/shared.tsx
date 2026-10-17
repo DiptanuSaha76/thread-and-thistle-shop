@@ -151,18 +151,14 @@ export function ProductCard({
         </span>
         <span>({product.reviews})</span>
       </div>
-      <div className="product-price">{money(product.price)}</div>
+      <div className="product-price">
+        {money(product.price)}{" "}
+        {product.compareAt && product.compareAt > product.price && (
+          <s className="text-muted-foreground">{money(product.compareAt)}</s>
+        )}
+      </div>
       {showSwatches && (
-        <Swatches
-          selected={colour}
-          onChange={setColour}
-          names={[
-            "Black",
-            "Off-White",
-            "Brown",
-            "Olive Green",
-            ...(product.colour === "Grey" || product.colour === "Purple" ? [product.colour] : []),
-          ]}
+        <Swatches selected={colour} onChange={setColour} names={productColours(product)}
         />
       )}
     </article>
