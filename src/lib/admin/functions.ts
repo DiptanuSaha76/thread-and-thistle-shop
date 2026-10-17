@@ -1,6 +1,6 @@
 import { createServerFn, createMiddleware } from '@tanstack/react-start';
 import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
-import { adminRoleAllowed, productInput, orderInput, supportInput, settingsInput } from './rules';
+import { adminRoleAllowed, productInput, orderInput, supportInput, settingsInput, variantsInput } from './rules';
 const requireAdmin = createMiddleware({ type: 'function' }).middleware([requireSupabaseAuth]).server(async ({ context, next }) => {
   const { data, error } = await context.supabase.rpc('has_role', { _user_id: context.userId, _role: 'admin' });
   if (error || !adminRoleAllowed(data)) throw new Error('Admin access required');
@@ -46,5 +46,12 @@ export const saveSupport = createServerFn({ method: 'POST' }).middleware([requir
 export const saveSettings = createServerFn({ method: 'POST' }).middleware([requireAdmin]).inputValidator(settingsInput).handler(async ({ data, context }) => {
   const result = await context.supabase.from('store_settings').upsert({ id: 1, ...data }).select('id').single();
   if (result.error) throw new Error('Settings could not be saved');
+  return { ok: true };
+});
+export const saveVariants = createServerFn({ method: 'POST' }).middleware([requireAdmin]).inputValidator(variantsInput).handler(async ({ data, context }) => {
+  if (!data.variants.length) return { ok: true };
+  const rows = data.variants.map(v => ({ ...v, product_id: data.product_id }));
+  const result = await context.supabase.from('product_variants').upsert(rows, { onConflict: 'product_id,colour,size' }).select('id');
+  if (result.error) throw new Error('Sizes and stock could not be saved');
   return { ok: true };
 });

@@ -203,7 +203,7 @@ export function OrdersPage() {
         <Button
           variant="destructive"
           onClick={() => {
-            if (cancel) store.cancel(cancel.id);
+            if (cancel) void store.cancel(cancel.id);
             setCancel(null);
           }}
         >
