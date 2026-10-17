@@ -1,2 +1,0 @@
-GRANT INSERT ON public.store_settings TO authenticated;
-CREATE POLICY "Admins create initial settings" ON public.store_settings FOR INSERT TO authenticated WITH CHECK (id = 1 AND public.has_role(auth.uid(), 'admin'));

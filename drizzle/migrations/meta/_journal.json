@@ -1,27 +1,5 @@
 {
   "version": "7",
   "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1792141397514,
-      "tag": "0000_secure_store_admin_access",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1792141513835,
-      "tag": "0001_allow_admin_initial_settings",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1792142699988,
-      "tag": "0002_shop_settings_and_images",
-      "breakpoints": true
-    }
-  ]
+  "entries": []
 }
