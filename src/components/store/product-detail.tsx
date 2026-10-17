@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Breadcrumb, Swatches, Quantity, Benefits, Related, Modal } from "./shared";
 import { useStore } from "@/lib/store/state";
-import { money, sizes, colourImages, stock, type Product } from "@/lib/store/catalogue";
+import { money, sizes, imageFor, productColours, productSizes, stock, type Product } from "@/lib/store/catalogue";
 export function ProductDetail({ product }: { product: Product }) {
   const store = useStore(),
     navigate = useNavigate();
@@ -23,11 +23,11 @@ export function ProductDetail({ product }: { product: Product }) {
     [error, setError] = useState(""),
     [guide, setGuide] = useState(false),
     [index, setIndex] = useState(0);
-  const images = [
-    colour === product.colour ? product.image : colourImages[colour],
-    colourImages[colour],
-    product.image,
-  ];
+  const extra = (product.images ?? []).filter((x) => x !== imageFor(product, colour));
+  const images = [imageFor(product, colour), ...extra, product.image]
+    .filter((x, i, a) => x && a.indexOf(x) === i)
+    .slice(0, 6);
+  const productSizeList = productSizes(product);
   const available = stock(product, colour, size) > 0;
   const add = (buy = false) => {
     if (!size) {
@@ -60,7 +60,7 @@ export function ProductDetail({ product }: { product: Product }) {
             </div>
             <div className={`main-product-image gallery-view-${index}`}>
               <img
-                src={images[index]}
+                src={images[index] ?? images[0]}
                 alt={`${colour} oversized t-shirt, view ${index + 1}`}
                 width="480"
                 height="1024"
@@ -80,7 +80,7 @@ export function ProductDetail({ product }: { product: Product }) {
                 size="icon"
                 className="gallery-prev"
                 aria-label="Previous image"
-                onClick={() => setIndex((index + 2) % 3)}
+                onClick={() => setIndex((index + images.length - 1) % images.length)}
               >
                 <ChevronLeft />
               </Button>
@@ -89,11 +89,11 @@ export function ProductDetail({ product }: { product: Product }) {
                 size="icon"
                 className="gallery-next"
                 aria-label="Next image"
-                onClick={() => setIndex((index + 1) % 3)}
+                onClick={() => setIndex((index + 1) % images.length)}
               >
                 <ChevronRight />
               </Button>
-              <span className="image-count">{index + 1} / 3</span>
+              <span className="image-count">{index + 1} / {images.length}</span>
             </div>
           </div>
           <div className="product-info">
@@ -110,23 +110,15 @@ export function ProductDetail({ product }: { product: Product }) {
               <small>Inclusive of all taxes</small>
             </div>
             <p className="product-description">
-              Premium oversized t-shirt made with 240 GSM cotton. Designed for everyday comfort with
-              a relaxed fit.
+              {product.description ||
+                "Premium oversized t-shirt made with 240 GSM cotton. Designed for everyday comfort with a relaxed fit."}
             </p>
             <div className="variant-group">
               <p>
                 Colour: <b>{colour}</b>
               </p>
               <Swatches
-                names={[
-                  "Black",
-                  "Off-White",
-                  "Brown",
-                  "Olive Green",
-                  ...(product.colour === "Grey" || product.colour === "Purple"
-                    ? [product.colour]
-                    : []),
-                ]}
+                names={productColours(product)}
                 selected={colour}
                 onChange={(c) => {
                   setColour(c);
@@ -145,9 +137,10 @@ export function ProductDetail({ product }: { product: Product }) {
                 </Button>
               </div>
               <div className="size-row">
-                {sizes.map((s) => (
+                {productSizeList.map((s) => (
                   <Button
                     key={s}
+                    disabled={stock(product, colour, s) === 0}
                     variant={s === size ? "default" : "outline"}
                     aria-pressed={s === size}
                     onClick={() => {
