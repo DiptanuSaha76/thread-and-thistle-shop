@@ -1,5 +1,6 @@
 import { createServerFn, createMiddleware } from '@tanstack/react-start';
 import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
+import type { Database } from '@/integrations/supabase/types';
 import { adminRoleAllowed, productInput, orderInput, supportInput, settingsInput, variantsInput } from './rules';
 const requireAdmin = createMiddleware({ type: 'function' }).middleware([requireSupabaseAuth]).server(async ({ context, next }) => {
   const { data, error } = await context.supabase.rpc('has_role', { _user_id: context.userId, _role: 'admin' });
@@ -19,7 +20,8 @@ export const getAdminData = createServerFn({ method: 'POST' }).middleware([requi
   return { products: results[0].data ?? [], orders: results[1].data ?? [], users: results[2].data ?? [], messages: results[3].data ?? [], settings: results[4].data, variants: results[5].data ?? [] };
 });
 export const saveProduct = createServerFn({ method: 'POST' }).middleware([requireAdmin]).inputValidator(productInput).handler(async ({ data, context }) => {
-  const { id, ...values } = data;
+  const { id, ...raw } = data;
+  const values = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined)) as Database['public']['Tables']['products']['Insert'];
   const result = id ? await context.supabase.from('products').update(values).eq('id', id).select('id').single() : await context.supabase.from('products').insert(values).select('id').single();
   if (result.error) throw new Error('Product could not be saved. Check the unique slug.');
   return result.data;
