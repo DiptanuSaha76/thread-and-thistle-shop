@@ -9,12 +9,18 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Breadcrumb, ProductGrid, Modal } from "./shared";
-import { products, colours, sizes, money, stock } from "@/lib/store/catalogue";
+import { products, sizes, money, stock, shopSettings, productColours, productSizes } from "@/lib/store/catalogue";
+import { useStore } from "@/lib/store/state";
 export function Listing({ collection = "T-Shirts" }: { collection?: string }) {
+  useStore();
+  const max = shopSettings.priceMax, min = shopSettings.priceMin, on = (f: string) => shopSettings.filters.includes(f);
+  const [inStock, setInStock] = useState(false),
+    [topRated, setTopRated] = useState(false),
+    [onSale, setOnSale] = useState(false);
   const [selectedSizes, setSizes] = useState<string[]>([]),
     [selectedColours, setColours] = useState<string[]>([]),
     [categories, setCategories] = useState<string[]>([]),
-    [price, setPrice] = useState(1499),
+    [price, setPrice] = useState(Infinity),
     [sort, setSort] = useState("Featured"),
     [list, setList] = useState(false),
     [sheet, setSheet] = useState(""),
@@ -27,7 +33,10 @@ export function Listing({ collection = "T-Shirts" }: { collection?: string }) {
     setSizes([]);
     setColours([]);
     setCategories([]);
-    setPrice(1499);
+    setPrice(Infinity);
+    setInStock(false);
+    setTopRated(false);
+    setOnSale(false);
     setPage(1);
   };
   const filtered = products
@@ -35,8 +44,12 @@ export function Listing({ collection = "T-Shirts" }: { collection?: string }) {
       (p) =>
         p.price <= price &&
         (!categories.length || categories.includes(p.category)) &&
-        (!selectedColours.length || selectedColours.includes(p.colour)) &&
-        (!selectedSizes.length || selectedSizes.some((s) => stock(p, p.colour, s) > 0)),
+        (!selectedColours.length || productColours(p).some((c) => selectedColours.includes(c))) &&
+        (!selectedSizes.length ||
+          selectedSizes.some((s) => productColours(p).some((c) => stock(p, c, s) > 0))) &&
+        (!inStock || productColours(p).some((c) => productSizes(p).some((s) => stock(p, c, s) > 0))) &&
+        (!topRated || p.rating >= 4.5) &&
+        (!onSale || (!!p.compareAt && p.compareAt > p.price)),
     )
     .sort((a, b) =>
       sort === "Price: Low to High"
@@ -50,7 +63,7 @@ export function Listing({ collection = "T-Shirts" }: { collection?: string }) {
               : products.indexOf(a) - products.indexOf(b),
     );
   const count =
-    selectedSizes.length + selectedColours.length + categories.length + (price < 1499 ? 1 : 0);
+    selectedSizes.length + selectedColours.length + categories.length + (price < max ? 1 : 0) + +inStock + +topRated + +onSale;
   const sortControl = (
     <select
       className="field sort-select"
@@ -74,9 +87,9 @@ export function Listing({ collection = "T-Shirts" }: { collection?: string }) {
           Clear all
         </Button>
       </div>
-      <details open>
+      {on("Category") && <details open>
         <summary>Category</summary>
-        {["T-Shirts", "Hoodies", "Shirts", "Bottoms", "Accessories"].map((c) => (
+        {shopSettings.categories.map((c) => (
           <label className="check-row" key={c}>
             <input
               type="checkbox"
@@ -84,11 +97,11 @@ export function Listing({ collection = "T-Shirts" }: { collection?: string }) {
               onChange={() => toggle(c, categories, setCategories)}
             />
             {c}
-            <small>{c === "T-Shirts" ? 8 : 0}</small>
+            <small>{products.filter((p) => p.category === c).length}</small>
           </label>
         ))}
-      </details>
-      <details open>
+      </details>}
+      {on("Size") && <details open>
         <summary>Size</summary>
         <div className="size-row">
           {sizes.map((s) => (
@@ -103,42 +116,48 @@ export function Listing({ collection = "T-Shirts" }: { collection?: string }) {
             </Button>
           ))}
         </div>
-      </details>
-      <details open>
+      </details>}
+      {on("Color") && <details open>
         <summary>Color</summary>
-        {colours.map((c) => (
+        {shopSettings.colours.map(({ name: c, hex }) => (
           <label className="check-row" key={c}>
             <input
               type="checkbox"
               checked={selectedColours.includes(c)}
               onChange={() => toggle(c, selectedColours, setColours)}
             />
-            <span className={`colour-dot swatch-${c.toLowerCase().replaceAll(" ", "-")}`} />
+            <span className="colour-dot" style={{ backgroundColor: hex }} />
             {c}
-            <small>{products.filter((p) => p.colour === c).length}</small>
+            <small>{products.filter((p) => productColours(p).includes(c)).length}</small>
           </label>
         ))}
-      </details>
-      <details open>
+      </details>}
+      {on("Price") && <details open>
         <summary>Price Range</summary>
         <input
           className="price-range"
           aria-label="Maximum price"
           type="range"
-          min="249"
-          max="1499"
+          min={min}
+          max={max}
           step="10"
-          value={price}
+          value={Math.min(price, max)}
           onChange={(e) => {
             setPrice(Number(e.target.value));
             setPage(1);
           }}
         />
         <div className="range-labels">
-          <span>₹249</span>
-          <span>{money(price)}</span>
+          <span>{money(min)}</span>
+          <span>{money(Math.min(price, max))}</span>
         </div>
-      </details>
+      </details>}
+      {(on("Availability") || on("Rating") || on("On Sale")) && <details open>
+        <summary>More filters</summary>
+        {on("Availability") && <label className="check-row"><input type="checkbox" checked={inStock} onChange={(e) => { setInStock(e.target.checked); setPage(1); }} />In stock only</label>}
+        {on("Rating") && <label className="check-row"><input type="checkbox" checked={topRated} onChange={(e) => { setTopRated(e.target.checked); setPage(1); }} />Rated 4.5+</label>}
+        {on("On Sale") && <label className="check-row"><input type="checkbox" checked={onSale} onChange={(e) => { setOnSale(e.target.checked); setPage(1); }} />On sale</label>}
+      </details>}
     </div>
   );
   return (
@@ -224,7 +243,7 @@ export function Listing({ collection = "T-Shirts" }: { collection?: string }) {
               >
                 <ChevronLeft />
               </Button>
-              {[1, 2].map((n) => (
+              {Array.from({ length: Math.ceil(filtered.length / 6) }, (_, i) => i + 1).map((n) => (
                 <Button
                   key={n}
                   variant={n === page ? "default" : "outline"}
@@ -238,14 +257,14 @@ export function Listing({ collection = "T-Shirts" }: { collection?: string }) {
                 variant="outline"
                 size="icon"
                 aria-label="Next page"
-                disabled={page === 2}
+                disabled={page >= Math.ceil(filtered.length / 6)}
                 onClick={() => setPage(page + 1)}
               >
                 <ChevronRight />
               </Button>
             </nav>
           )}
-          <p className="sample-note">8 sample styles · Ratings are sample reviews.</p>
+          
         </div>
       </section>
       <div className="mobile-bottom-filter">
