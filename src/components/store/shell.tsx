@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Link } from "@tanstack/react-router";
 import {
   Search,
@@ -25,6 +26,17 @@ const nav = [
 export function StoreShell({ children }: { children: ReactNode }) {
   const store = useStore();
   const { user, signOut } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!user) return setIsAdmin(false);
+    let live = true;
+    void supabase.rpc("has_role", { _user_id: user.id, _role: "admin" }).then(({ data }) => {
+      if (live) setIsAdmin(data === true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [user]);
   const [menu, setMenu] = useState(false),
     [search, setSearch] = useState(false),
     [wish, setWish] = useState(false),
@@ -147,6 +159,11 @@ export function StoreShell({ children }: { children: ReactNode }) {
           >
             <Heart /> Wishlist ({store.wishlist.length})
           </Button>
+          {isAdmin && (
+            <Link to="/admin" onClick={() => setMenu(false)}>
+              Admin Panel <ArrowRight size={18} />
+            </Link>
+          )}
           {user ? (
             <Button
               variant="ghost"
