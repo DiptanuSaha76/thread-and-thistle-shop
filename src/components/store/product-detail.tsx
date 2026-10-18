@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Breadcrumb, Swatches, Quantity, Benefits, Related, Modal } from "./shared";
 import { useStore } from "@/lib/store/state";
+import { Reviews } from "./reviews";
 import { money, sizes, imageFor, productColours, productSizes, stock, type Product } from "@/lib/store/catalogue";
 export function ProductDetail({ product }: { product: Product }) {
   const store = useStore(),
@@ -210,6 +211,7 @@ export function ProductDetail({ product }: { product: Product }) {
           </div>
         </div>
       </div>
+      <Reviews product={product} />
       <Related exclude={product.id} />
       <Modal
         open={guide}
