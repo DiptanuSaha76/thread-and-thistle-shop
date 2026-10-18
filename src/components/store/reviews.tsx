@@ -14,7 +14,7 @@ const seed: Review[] = [
   { name: "Ishita K.", stars: 5, title: "Fast delivery, neat packing", text: "Arrived in two days. Feels heavy and premium, exactly like the photos.", helpful: 23 },
 ];
 const tags: [string, number, "up" | "mixed"][] = [
-  ["Fabric quality", 186], ["Fit", 142], ["Value for money", 121], ["Comfort", 98], ["Length", 37], ["Colour fade", 22],
+  ["Fabric quality", 186, "up"], ["Fit", 142, "up"], ["Value for money", 121, "up"], ["Comfort", 98, "up"], ["Length", 37, "mixed"], ["Colour fade", 22, "mixed"],
 ];
 
 function Stars({ value, size = 16 }: { value: number; size?: number }) {
