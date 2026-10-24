@@ -4,7 +4,9 @@ import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Benefits, ProductGrid, SectionHeading, TrustStrip } from "@/components/store/shared";
 import { products, pageHead } from "@/lib/store/catalogue";
+import { useStore } from "@/lib/store/state";
 import campaign from "@/assets/campaign.jpg";
+
 export const Route = createFileRoute("/")({
   head: () =>
     pageHead(
@@ -13,6 +15,7 @@ export const Route = createFileRoute("/")({
     ),
   component: Home,
 });
+
 const slides = [
   {
     eyebrow: "PREMIUM OVERSIZED",
@@ -33,14 +36,13 @@ const slides = [
     copy: "Premium comfort. No compromises.",
   },
 ];
+
 function Home() {
+  // Subscribe to StoreProvider so this page rerenders when the async catalogue arrives.
+  const store = useStore();
   const [slide, setSlide] = useState(0);
-  const current = slides[slide] ?? {
-    eyebrow: "PREMIUM OVERSIZED",
-    heading: "T-SHIRTS",
-    line: "240 GSM premium cotton.",
-    copy: "Oversized fit. Everyday comfort.",
-  };
+  const current = slides[slide] ?? slides[0]!;
+
   return (
     <>
       <section className={`hero campaign-slide-${slide}`} aria-label="Latest campaigns">
@@ -57,7 +59,7 @@ function Home() {
           variant="ghost"
           size="icon"
           aria-label="Previous campaign"
-          onClick={() => setSlide((slide + 2) % 3)}
+          onClick={() => setSlide((slide + 2) % slides.length)}
         >
           <ChevronLeft />
         </Button>
@@ -96,7 +98,7 @@ function Home() {
           variant="ghost"
           size="icon"
           aria-label="Next campaign"
-          onClick={() => setSlide((slide + 1) % 3)}
+          onClick={() => setSlide((slide + 1) % slides.length)}
         >
           <ChevronRight />
         </Button>
@@ -109,8 +111,18 @@ function Home() {
       </div>
       <section className="container home-collection">
         <SectionHeading title="LATEST COLLECTIONS" />
-        <ProductGrid items={products.slice(0, 4)} />
-        <p className="sample-note">Sample catalogue · Ratings shown are sample reviews.</p>
+        {products.length > 0 ? (
+          <ProductGrid key={store.version} items={products.slice(0, 4)} />
+        ) : (
+          <p className="info-note" role="status">
+            {!store.catalogueReady
+              ? "Loading products…"
+              : store.catalogueError
+                ? "We couldn't load products right now. Please refresh the page."
+                : "New products are coming soon."}
+          </p>
+        )}
+        <p className="info-note">Curated essentials for everyday wear.</p>
       </section>
       <TrustStrip />
     </>

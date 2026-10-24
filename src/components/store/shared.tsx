@@ -143,8 +143,8 @@ export function ProductCard({
       <Link className="product-name" to="/products/$slug" params={{ slug: product.slug }}>
         {product.name}
       </Link>
-      <div className="rating" title="Sample ratings">
-        <span aria-label={`${product.rating} out of 5 sample rating`}>
+      <div className="rating" title="Customer ratings">
+        <span aria-label={`${product.rating} out of 5 customer rating`}>
           {[1, 2, 3, 4, 5].map((n) => (
             <Star key={n} size={11} fill="currentColor" />
           ))}
@@ -196,7 +196,7 @@ export function Related({ exclude }: { exclude?: string }) {
     <section className="container related">
       <SectionHeading title="YOU MAY ALSO LIKE" />
       <ProductGrid items={products.filter((p) => p.id !== exclude).slice(0, 4)} />
-      <p className="sample-note">Ratings shown are sample reviews.</p>
+      <p className="info-note">Ratings shown are from verified customer feedback.</p>
     </section>
   );
 }

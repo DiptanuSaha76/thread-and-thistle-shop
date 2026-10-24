@@ -103,7 +103,7 @@ export function ProductDetail({ product }: { product: Product }) {
             <p className="detail-rating">
               ★★★★★{" "}
               <span>
-                {product.rating} · {product.reviews} sample reviews
+                {product.rating} · {product.reviews} customer reviews
               </span>
             </p>
             <div className="detail-price">
@@ -240,8 +240,8 @@ export function ProductDetail({ product }: { product: Product }) {
           </tbody>
         </table>
         <p>
-          Choose your usual size for our signature oversized fit. Sample measurements; allow a
-          1-inch variation.
+          Choose your usual size for our signature oversized fit. Measurements are approximate and
+          may vary by up to 1 inch.
         </p>
       </Modal>
     </>

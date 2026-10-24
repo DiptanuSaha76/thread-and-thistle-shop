@@ -3,6 +3,6 @@ import { OrdersPage } from "@/components/store/orders";
 import { pageHead } from "@/lib/store/catalogue";
 export const Route = createFileRoute("/orders")({
   head: () =>
-    pageHead("My Orders", "View your YEARTH demo orders, track progress and manage orders."),
+    pageHead("My Orders", "View your YEARTH orders, track progress and manage your purchases."),
   component: OrdersPage,
 });

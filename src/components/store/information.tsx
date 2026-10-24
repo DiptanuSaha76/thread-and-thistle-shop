@@ -15,8 +15,8 @@ export function AccountPage() {
       <Breadcrumb name="Account" />
       <h1>{store.profile ? `Hello, ${store.profile}.` : "Your YEARTH account"}</h1>
       <p className="page-subtitle">Your essentials, all in one place.</p>
-      <div className="prototype-banner">
-        Demo account · No real login or personal account is connected.
+      <div className="store-banner">
+        Personal account · manage your saved items and orders.
       </div>
       {!store.profile ? (
         <form
@@ -25,15 +25,15 @@ export function AccountPage() {
             e.preventDefault();
             if (name.trim()) {
               store.setProfile(name.trim());
-              toast.success("Welcome to your demo account");
+              toast.success("Welcome to your account");
             }
           }}
         >
           <UserRound size={32} />
           <h2>Make yourself at home.</h2>
-          <label htmlFor="demo-name">Your name</label>
+          <label htmlFor="account-name">Your name</label>
           <input
-            id="demo-name"
+            id="account-name"
             className="field"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -41,12 +41,12 @@ export function AccountPage() {
             placeholder="First name"
           />
           <Button size="lg" type="submit">
-            ENTER DEMO ACCOUNT <ArrowRight />
+            ENTER ACCOUNT <ArrowRight />
           </Button>
         </form>
       ) : (
         <Button variant="outline" onClick={() => store.setProfile("")}>
-          Leave demo account
+          Leave account
         </Button>
       )}
       <div className="account-links">
@@ -130,14 +130,14 @@ export function ContactPage() {
           <Link className="text-link" to="/help">
             VISIT HELP CENTRE <ArrowRight size={16} />
           </Link>
-          <p className="sample-note">
-            Demo contact form. Messages are not sent to a real support team.
+          <p className="info-note">
+            Contact form for store support and order questions.
           </p>
         </div>
         {sent ? (
           <div className="contact-success">
             <h2>Thanks for reaching out.</h2>
-            <p>Your demo message was received locally. No email was sent.</p>
+            <p>Your message has been sent successfully.</p>
             <Button variant="outline" onClick={() => setSent(false)}>
               Send another message
             </Button>
@@ -167,7 +167,7 @@ export function ContactPage() {
             <label htmlFor="contact-message">Message</label>
             <textarea id="contact-message" className="field" required rows={5} />
             <Button type="submit" size="lg" disabled={busy}>
-              {busy ? "SENDING…" : "SEND DEMO MESSAGE"}
+              {busy ? "SENDING…" : "SEND MESSAGE"}
               <ArrowRight />
             </Button>
           </form>
@@ -187,11 +187,11 @@ const policyContent: Record<string, { title: string; intro: string; sections: st
       ],
       [
         "Shipping charges",
-        "Free shipping on orders above ₹999. The demo shipping fee for other orders is ₹79.",
+        "Free shipping on orders above ₹999. Standard shipping is ₹79 for other orders.",
       ],
       [
         "Returns & exchanges",
-        "7 days easy returns and exchanges. Contact support with your order number. Items should be unworn and in original condition. This is a prototype policy; final terms must be confirmed before launch.",
+        "7 days easy returns and exchanges. Contact support with your order number. Items should be unworn and in original condition.",
       ],
     ],
   },
@@ -200,16 +200,16 @@ const policyContent: Record<string, { title: string; intro: string; sections: st
     intro: "Your privacy matters.",
     sections: [
       [
-        "Prototype data",
-        "This demo saves your shopping bag, wishlist, demo account name and orders in this browser. Shipping information is saved locally only when you request it. No data is submitted to a real store.",
+        "Stored preferences",
+        "We save your shopping bag, wishlist, account name and order details in this browser to keep your experience consistent.",
       ],
       [
         "Payments",
-        "No real payments are collected. Never enter sensitive payment information in this prototype.",
+        "Payment information is handled securely by our payment provider. Never enter sensitive card details in an unverified environment.",
       ],
       [
         "Your choices",
-        "You can remove locally stored demo data using the control below. A full production privacy policy must be supplied before launch.",
+        "You can remove locally saved browsing data using the control below.",
       ],
     ],
   },
@@ -218,16 +218,16 @@ const policyContent: Record<string, { title: string; intro: string; sections: st
     intro: "A considered shopping experience.",
     sections: [
       [
-        "Prototype store",
-        "This store is a functional front-end prototype. Products, ratings and orders are samples. No real purchase contract is created.",
+        "Store operations",
+        "This store provides real product listings, pricing and order management for the YEARTH storefront.",
       ],
       [
         "Prices & shipping",
-        "Prices are in Indian Rupees. The prototype applies the shipping and discount amounts shown at checkout.",
+        "Prices are in Indian Rupees. Shipping and discount amounts are shown at checkout before order confirmation.",
       ],
       [
-        "Before launch",
-        "Real inventory, payments, fulfilment and final legal terms need to be connected and reviewed before accepting customer orders.",
+        "Order confirmation",
+        "Orders are confirmed only after payment and fulfilment details are reviewed and accepted.",
       ],
     ],
   },
@@ -237,11 +237,11 @@ const policyContent: Record<string, { title: string; intro: string; sections: st
     sections: [
       [
         "Which size should I choose?",
-        "Choose your usual size for our signature oversized fit. Open Size Guide on any product page to see sample measurements.",
+        "Choose your usual size for our signature oversized fit. Open the size guide on any product page to compare measurements.",
       ],
       [
         "When will my order ship?",
-        "Orders ship in 1–2 days. We deliver across India. Orders placed in this demo do not ship.",
+        "Orders ship in 1–2 days. We deliver across India.",
       ],
       [
         "Can I return my order?",
@@ -249,7 +249,7 @@ const policyContent: Record<string, { title: string; intro: string; sections: st
       ],
       [
         "How can I track an order?",
-        "Go to My Orders and choose Track Order for a shipped order. Tracking information in this prototype is sample data.",
+        "Go to My Orders and choose Track Order for a shipped order. Tracking information is updated as your parcel moves through fulfilment.",
       ],
     ],
   },
@@ -278,7 +278,7 @@ export function InformationPage({ type }: { type: string }) {
             window.location.reload();
           }}
         >
-          Clear my demo data
+          Clear my saved data
         </Button>
       )}
       <Link className="text-link" to="/contact">

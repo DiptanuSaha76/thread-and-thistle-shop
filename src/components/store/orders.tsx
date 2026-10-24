@@ -31,7 +31,7 @@ export function OrdersPage() {
         </Button>
         <h1>My Orders</h1>
       </div>
-      <p className="sample-note">
+      <p className="info-note">
         Orders placed with your signed-in account.
       </p>
       <nav className="order-tabs" aria-label="Order status">
@@ -128,7 +128,7 @@ export function OrdersPage() {
           if (!o) setDetail(null);
         }}
         title={tracking ? "Track your order" : `Order #${detail?.id ?? ""}`}
-        description="Demo order details · Not a real shipment"
+        description="Order details and delivery status"
       >
         {detail && (
           <>
@@ -136,7 +136,7 @@ export function OrdersPage() {
             <Progress order={detail} />
             {tracking && (
               <p>
-                Demo tracking number: YRT-DEMO-{detail.id}
+                Tracking number: YRT-{detail.id}
                 <br />
                 Your parcel is on its way. Estimated delivery: 3–5 business days after dispatch.
               </p>
@@ -172,7 +172,7 @@ export function OrdersPage() {
                 {detail.shippingAddress.phone}
               </p>
             ) : (
-              <p>Sample order — no customer address.</p>
+              <p>Address details will appear once your order is confirmed.</p>
             )}
             <p>Payment: {detail.paymentMethod}</p>
             <dl className="order-detail-totals">

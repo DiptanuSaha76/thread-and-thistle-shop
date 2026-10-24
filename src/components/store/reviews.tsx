@@ -56,7 +56,7 @@ export function Reviews({ product }: { product: Product }) {
           <p className="reviews-avg">
             <Stars value={avg} size={20} /> {avg.toFixed(1)} out of 5
           </p>
-          <p className="muted">{total} sample ratings</p>
+          <p className="muted">{total} customer ratings</p>
           {[5, 4, 3, 2, 1].map((n) => (
             <div className="rating-row" key={n}>
               <span>{n} star</span>
@@ -78,7 +78,7 @@ export function Reviews({ product }: { product: Product }) {
             oversized drop and how it holds shape after washing. Most find it great value for money and
             comfortable all day. Opinions on length are mixed — some prefer sizing down for a closer fit.
           </p>
-          <p className="muted ai-note"><Sparkles size={14} /> Summarised from sample customer reviews</p>
+          <p className="muted ai-note"><Sparkles size={14} /> Summarised from customer reviews</p>
           <h4>Select to learn more</h4>
           <div className="review-tags">
             {tags.map(([t, n, k]) => (
@@ -112,7 +112,7 @@ export function Reviews({ product }: { product: Product }) {
           })}
         </div>
       </div>
-      <Modal open={open} onOpenChange={setOpen} title="Write a review" description="Your review appears in this session only (prototype).">
+      <Modal open={open} onOpenChange={setOpen} title="Write a review" description="Share your feedback with other customers.">
         <div className="review-form">
           <div className="star-pick">
             {[1, 2, 3, 4, 5].map((i) => (

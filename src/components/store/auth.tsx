@@ -21,7 +21,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { passwordProblem, safeNext, useAuth } from "@/lib/auth";
 import campaign from "@/assets/auth-campaign.jpg";
 import { callingCountries, normalizePhone, signupDetailsSchema } from "@/lib/phone";
@@ -110,8 +109,21 @@ function Field(props: {
 function SocialButtons({ next }: { next: string }) {
   const go = async (provider: "google" | "apple") => {
     sessionStorage.setItem("yearth-auth-next", next);
-    const r = await lovable.auth.signInWithOAuth(provider, { redirect_uri: window.location.origin + "/login" });
-    if (r.error) toast.error("Couldn't sign you in. Please try again.");
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/login`,
+      },
+    });
+
+    if (error) {
+      toast.error("Couldn't sign you in. Please try again.");
+      return;
+    }
+
+    if (data?.url) {
+      window.location.assign(data.url);
+    }
   };
   return (
     <>

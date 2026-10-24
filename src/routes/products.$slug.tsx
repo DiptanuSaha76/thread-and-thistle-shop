@@ -2,10 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useStore } from "@/lib/store/state";
 import { ProductDetail } from "@/components/store/product-detail";
 import { products, pageHead } from "@/lib/store/catalogue";
+
 export const Route = createFileRoute("/products/$slug")({
   loader: ({ params }) => {
-    const p = products.find((p) => p.slug === params.slug);
-    return p ? { ...p, slug: params.slug } : { slug: params.slug, missing: true as const };
+    // This shared array can still be empty while the browser fetch is in flight.
+    const product = products.find((item) => item.slug === params.slug);
+    return product ? { ...product, slug: params.slug } : { slug: params.slug, missing: true as const };
   },
   head: ({ loaderData }) =>
     pageHead(
@@ -16,15 +18,27 @@ export const Route = createFileRoute("/products/$slug")({
     ),
   component: Product,
 });
+
 function Product() {
   const data = Route.useLoaderData();
   const store = useStore();
-  const p = products.find((x) => x.slug === data.slug) ?? ("name" in data ? data : undefined);
-  if (!p)
+  // Re-check the shared array after StoreProvider finishes loading the catalogue.
+  const product = products.find((item) => item.slug === data.slug) ?? ("name" in data ? data : undefined);
+
+  if (!product) {
     return (
-      <section className="container empty-state">
-        <h1>{store.catalogueReady ? "Product unavailable" : "Loading…"}</h1>
+      <section className="container empty-state" role="status">
+        <h1>
+          {!store.catalogueReady
+            ? "Loading…"
+            : store.catalogueError
+              ? "Products couldn't be loaded"
+              : "Product unavailable"}
+        </h1>
+        {store.catalogueError && <p>Please refresh the page and try again.</p>}
       </section>
     );
-  return <ProductDetail key={p.id + store.version} product={p} />;
+  }
+
+  return <ProductDetail key={`${product.id}-${store.version}`} product={product} />;
 }

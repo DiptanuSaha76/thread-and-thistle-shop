@@ -3,6 +3,6 @@ import { AccountPage } from "@/components/store/information";
 import { pageHead } from "@/lib/store/catalogue";
 export const Route = createFileRoute("/account")({
   head: () =>
-    pageHead("Your Account", "Your YEARTH demo account, saved favourites and order history."),
+    pageHead("Your Account", "Manage your YEARTH account, saved favourites and order history."),
   component: AccountPage,
 });

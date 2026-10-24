@@ -1,6 +1,6 @@
 @import "tailwindcss" source(none);
-@source "../src";
 @import "tw-animate-css";
+@source "../src";
 @custom-variant dark (&:is(.dark *));
 @theme inline {
   --font-sans: "Inter", Arial, sans-serif;
@@ -497,7 +497,7 @@
   font-size: 13px;
   font-weight: 600;
 }
-.sample-note {
+.info-note {
   font-size: 10px;
   color: var(--muted-foreground);
   margin-top: 16px;
@@ -1310,7 +1310,7 @@
   color: var(--primary-foreground);
   border-color: var(--primary);
 }
-.prototype-banner {
+.store-banner {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -1622,7 +1622,7 @@
 .account-page {
   max-width: 1000px;
 }
-.account-page > .prototype-banner {
+.account-page > .store-banner {
   margin-top: 24px;
 }
 .account-form {
@@ -2102,7 +2102,7 @@
   .product-price {
     font-size: 12px;
   }
-  .sample-note {
+  .info-note {
     font-size: 9px;
   }
   .trust-strip {
@@ -2499,7 +2499,7 @@
   .checkout-progress > div > a {
     gap: 5px;
   }
-  .prototype-banner {
+  .store-banner {
     font-size: 10px;
     padding: 11px;
     margin-bottom: 24px;

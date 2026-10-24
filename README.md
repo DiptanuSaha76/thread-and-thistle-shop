@@ -16,17 +16,7 @@ filters, sorting, wishlist, cart, checkout, and order management.
 Do not create static mockup screens. Implement a working,
 responsive React application using the project's existing stack.
 
-This project was built with [Lovable](https://lovable.dev).
-
-**Live app**: https://thread-and-thistle-shop.lovable.app
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/d90e5b25-bcbf-4ac5-8799-ef29789630ad).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+This project is a custom storefront built with React, Vite, TanStack Router, and Supabase.
 
 ## Development
 

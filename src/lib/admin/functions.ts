@@ -16,7 +16,25 @@ export const getAdminData = createServerFn({ method: 'POST' }).middleware([requi
     context.supabase.from('store_settings').select('*').eq('id', 1).maybeSingle(),
     context.supabase.from('product_variants').select('*'),
   ]);
-  for (const result of results) if (result.error) throw new Error('Unable to load store records');
+  const queryNames = [
+    'products',
+    'orders',
+    'profiles',
+    'support_messages',
+    'store_settings',
+    'product_variants',
+  ] as const;
+
+  for (const [index, result] of results.entries()) {
+    if (result.error) {
+      console.error(
+        `[Admin query failed: ${queryNames[index]}]`,
+        result.error
+      );
+
+      throw new Error('Unable to load store records');
+    }
+  }
   return { products: results[0].data ?? [], orders: results[1].data ?? [], users: results[2].data ?? [], messages: results[3].data ?? [], settings: results[4].data, variants: results[5].data ?? [] };
 });
 export const saveProduct = createServerFn({ method: 'POST' }).middleware([requireAdmin]).inputValidator(productInput).handler(async ({ data, context }) => {

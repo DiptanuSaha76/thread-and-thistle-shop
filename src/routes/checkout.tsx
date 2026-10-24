@@ -5,7 +5,7 @@ export const Route = createFileRoute("/checkout")({
   head: () =>
     pageHead(
       "Checkout",
-      "Complete your YEARTH demo checkout with delivery information, payment selection and order review.",
+      "Complete your YEARTH checkout with delivery information, payment selection and order review.",
     ),
   component: CheckoutPage,
 });

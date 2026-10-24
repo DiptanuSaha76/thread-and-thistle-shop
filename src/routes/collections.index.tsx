@@ -2,6 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { Breadcrumb, ProductGrid } from "@/components/store/shared";
 import { products, pageHead } from "@/lib/store/catalogue";
+import { useStore } from "@/lib/store/state";
+
 export const Route = createFileRoute("/collections/")({
   head: () =>
     pageHead(
@@ -10,7 +12,10 @@ export const Route = createFileRoute("/collections/")({
     ),
   component: CollectionsIndex,
 });
+
 function CollectionsIndex() {
+  const store = useStore();
+
   return (
     <section className="container standard-page">
       <Breadcrumb name="Collections" />
@@ -22,9 +27,19 @@ function CollectionsIndex() {
       <Link to="/collections/$slug" params={{ slug: "t-shirts" }} className="collection-tile-title">
         T-SHIRTS <ArrowRight size={20} />
       </Link>
-      <p className="collection-note">8 considered colours & styles · Premium 240 GSM cotton</p>
+      <p className="collection-note">Colours &amp; styles · Premium 240 GSM cotton</p>
       <div className="collections-cards">
-        <ProductGrid items={products.slice(0, 4)} />
+        {products.length > 0 ? (
+          <ProductGrid key={store.version} items={products.slice(0, 4)} />
+        ) : (
+          <p className="info-note" role="status">
+            {!store.catalogueReady
+              ? "Loading products…"
+              : store.catalogueError
+                ? "We couldn't load products right now. Please refresh the page."
+                : "No products are currently available."}
+          </p>
+        )}
       </div>
     </section>
   );

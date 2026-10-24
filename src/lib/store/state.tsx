@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
+import { getPublicCatalogue } from "./functions";
 import {
-  assetByKey,
-  colourImages,
+  colourHex,
+  hydrateProducts,
   lineKey,
   products,
   sizes,
@@ -15,8 +17,8 @@ import {
   type CartLine,
   type Order,
   type Product,
-  type ShopColour,
 } from "./catalogue";
+
 type Store = {
   cart: CartLine[];
   wishlist: string[];
@@ -25,6 +27,7 @@ type Store = {
   profile: string;
   ready: boolean;
   catalogueReady: boolean;
+  catalogueError: string | null;
   version: number;
   add: (l: CartLine) => void;
   quantity: (key: string, n: number) => void;
@@ -35,7 +38,9 @@ type Store = {
   cancel: (id: string) => Promise<void>;
   setProfile: (s: string) => void;
 };
+
 const Context = createContext<Store | undefined>(undefined);
+
 type OrderRow = {
   id: string;
   order_number: string;
@@ -55,6 +60,7 @@ type OrderRow = {
   ship_pincode: string;
   order_items: { product_id: string | null; colour: string; size: string; quantity: number }[];
 };
+
 const toOrder = (o: OrderRow): Order => ({
   id: o.order_number,
   dbId: o.id,
@@ -81,54 +87,7 @@ const toOrder = (o: OrderRow): Order => ({
     pincode: o.ship_pincode,
   },
 });
-async function loadCatalogue() {
-  const [p, v, s] = await Promise.all([
-    supabase.from("products").select("*").eq("active", true).order("sort_order"),
-    supabase.from("product_variants").select("*"),
-    supabase.from("store_settings").select("*").eq("id", 1).maybeSingle(),
-  ]);
-  if (p.error || v.error) throw new Error("catalogue");
-  const live: Product[] = (p.data ?? []).map((r) => ({
-    id: r.id,
-    slug: r.slug,
-    name: r.name,
-    price: r.price,
-    compareAt: r.compare_at_price,
-    rating: Number(r.rating),
-    reviews: r.review_count,
-    colour: r.primary_colour,
-    image:
-      r.image_url ||
-      r.images?.[0] ||
-      (r.image_key ? assetByKey[r.image_key] : undefined) ||
-      colourImages[r.primary_colour] ||
-      "",
-    images: r.images ?? [],
-    category: r.category,
-    badge: r.badge ?? undefined,
-    description: r.description,
-  }));
-  products.splice(0, products.length, ...live);
-  variants.clear();
-  for (const row of v.data ?? []) {
-    const list = variants.get(row.product_id) ?? [];
-    list.push({ id: row.id, colour: row.colour, hex: row.colour_hex, size: row.size, stock: row.stock, image: row.image_url });
-    variants.set(row.product_id, list);
-  }
-  for (const item of live) if (!variants.has(item.id)) variants.set(item.id, []);
-  const st = s.data;
-  if (st) {
-    shopSettings.categories = st.categories;
-    shopSettings.colours = (Array.isArray(st.colours) ? st.colours : []) as ShopColour[];
-    shopSettings.priceMin = st.price_min;
-    shopSettings.priceMax = st.price_max;
-    shopSettings.filters = st.filters;
-    shopSettings.freeShippingThreshold = st.free_shipping_threshold;
-    shopSettings.shippingFee = st.shipping_fee;
-    sizes.splice(0, sizes.length, ...st.sizes);
-    colours.splice(0, colours.length, ...shopSettings.colours.map((c) => c.name));
-  }
-}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartLine[]>([]),
     [wishlist, setWishlist] = useState<string[]>([]),
@@ -137,26 +96,87 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [profile, setProfile] = useState(""),
     [ready, setReady] = useState(false),
     [catalogueReady, setCatalogueReady] = useState(false),
+    [catalogueError, setCatalogueError] = useState<string | null>(null),
     [version, setVersion] = useState(0);
+
+  const fetchCatalogue = useServerFn(getPublicCatalogue);
+
+  const loadCatalogue = async () => {
+    const result = await fetchCatalogue();
+    const live: Product[] = hydrateProducts(result.products);
+
+    products.splice(0, products.length, ...live);
+    variants.clear();
+
+    for (const row of result.variants) {
+      // Defensive guard: malformed variant rows are filtered in functions.ts too.
+      if (!row.product_id) continue;
+      const list = variants.get(row.product_id) ?? [];
+      list.push({
+        id: row.id,
+        colour: row.colour,
+        hex: row.colour_hex ?? colourHex(row.colour) ?? "#111111",
+        size: row.size,
+        stock: row.stock,
+        image: row.image_url,
+      });
+      variants.set(row.product_id, list);
+    }
+
+    for (const item of live) {
+      if (!variants.has(item.id)) variants.set(item.id, []);
+    }
+
+    const st = result.settings;
+    if (st) {
+      if (st.categories.length) shopSettings.categories = st.categories;
+      if (st.colours.length) shopSettings.colours = st.colours;
+      shopSettings.priceMin = st.price_min;
+      shopSettings.priceMax = st.price_max;
+      if (st.filters.length) shopSettings.filters = st.filters;
+      shopSettings.freeShippingThreshold = st.free_shipping_threshold;
+      shopSettings.shippingFee = st.shipping_fee;
+      if (st.sizes.length) sizes.splice(0, sizes.length, ...st.sizes);
+      if (st.colours.length) colours.splice(0, colours.length, ...st.colours.map((c) => c.name));
+    }
+    setCatalogueError(null);
+  };
+
   const loadOrders = async () => {
     const { data: auth } = await supabase.auth.getSession();
     if (!auth.session) return setOrders([]);
-    const { data } = await supabase
+
+    const { data, error } = await supabase
       .from("orders")
       .select("*, order_items(product_id,colour,size,quantity)")
       .eq("user_id", auth.session.user.id)
       .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[YEARTH] Could not load customer orders:", error.message);
+      return;
+    }
     setOrders(((data ?? []) as OrderRow[]).map(toOrder));
   };
+
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         await loadCatalogue();
-      } catch {}
+      } catch (error) {
+        console.error("[YEARTH] Failed to load catalogue:", error);
+        if (alive) {
+          setCatalogueError(
+            error instanceof Error ? error.message : "Unable to load products. Please refresh and try again.",
+          );
+        }
+      }
       if (!alive) return;
+
       setCatalogueReady(true);
       setVersion((n) => n + 1);
+
       try {
         const d = JSON.parse(localStorage.getItem("yearth-store-v2") ?? "null");
         if (d) {
@@ -178,24 +198,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (typeof d.promo === "string") setPromo(d.promo);
           if (typeof d.profile === "string") setProfile(d.profile);
         }
-      } catch {}
+      } catch (error) {
+        console.warn("[YEARTH] Could not restore saved store state:", error);
+      }
+
       setReady(true);
       void loadOrders();
     })();
+
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN" || event === "SIGNED_OUT") void loadOrders();
     });
+
     return () => {
       alive = false;
       sub.subscription.unsubscribe();
     };
   }, []);
+
   useEffect(() => {
-    if (ready)
+    if (ready) {
       try {
         localStorage.setItem("yearth-store-v2", JSON.stringify({ cart, wishlist, promo, profile }));
-      } catch {}
+      } catch (error) {
+        console.warn("[YEARTH] Could not save store state:", error);
+      }
+    }
   }, [cart, wishlist, promo, profile, ready]);
+
   const add = (l: CartLine) => {
     const product = products.find((p) => p.id === l.productId);
     if (!product || stock(product, l.colour, l.size) === 0) {
@@ -213,9 +243,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
     toast.success("Added to your bag");
   };
+
   const placeOrder = async (address: Address, payment: string) => {
     const { data: auth } = await supabase.auth.getSession();
     if (!auth.session) throw new Error("Please sign in to place your order.");
+
     const { data, error } = await supabase.rpc("place_order", {
       p_items: cart,
       p_shipping: address,
@@ -224,20 +256,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
     if (error) throw new Error(error.message);
     const result = data as { id: string };
-    const { data: row } = await supabase
+
+    const { data: row, error: orderError } = await supabase
       .from("orders")
       .select("*, order_items(product_id,colour,size,quantity)")
       .eq("id", result.id)
       .single();
+    if (orderError || !row) throw new Error(orderError?.message ?? "The order was placed but its details could not be loaded.");
+
     setCart([]);
     setPromo("");
     try {
       await loadCatalogue();
       setVersion((n) => n + 1);
-    } catch {}
+    } catch (error) {
+      console.error("[YEARTH] Catalogue refresh after order failed:", error);
+    }
     void loadOrders();
     return toOrder(row as OrderRow);
   };
+
   return (
     <Context.Provider
       value={{
@@ -248,13 +286,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         profile,
         ready,
         catalogueReady,
+        catalogueError,
         version,
         add,
         quantity: (key, n) =>
           setCart((prev) =>
-            prev.map((l) =>
-              lineKey(l) === key ? { ...l, quantity: Math.max(1, Math.min(10, n)) } : l,
-            ),
+            prev.map((l) => (lineKey(l) === key ? { ...l, quantity: Math.max(1, Math.min(10, n)) } : l)),
           ),
         remove: (key) => {
           const old = cart.find((l) => lineKey(l) === key);
@@ -287,6 +324,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     </Context.Provider>
   );
 }
+
 export function useStore() {
   const value = useContext(Context);
   if (!value) throw new Error("useStore must be used inside StoreProvider");

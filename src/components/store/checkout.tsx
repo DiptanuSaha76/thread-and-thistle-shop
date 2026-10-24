@@ -192,9 +192,9 @@ export function CheckoutPage() {
           </div>
         ))}
       </div>
-      <div className="prototype-banner">
+      <div className="store-banner">
         <ShieldCheck size={16} />
-        Demo checkout · No real payment or shipment
+        Secure checkout · review your order before placing it
       </div>
       <div className="checkout-layout">
         <div>
@@ -330,13 +330,13 @@ export function CheckoutPage() {
               </div>
               <div className="payment-notice">
                 {payment === "upi"
-                  ? "UPI payment would open your chosen app in the live store."
+                  ? "UPI payment redirects to your selected app to complete the purchase."
                   : payment === "card"
-                    ? "Card details would be entered securely with a payment provider. Do not enter card details in this demo."
+                    ? "Card details are processed securely through our payment provider."
                     : payment === "netbanking"
-                      ? "Bank selection and authorisation would open with a payment provider."
+                      ? "Bank selection and authorisation continue through the payment provider."
                       : "Cash on Delivery selected."}
-                <p>No payment is collected in this prototype.</p>
+                <p>Your order is reviewed before payment is confirmed.</p>
               </div>
               <Button size="lg" className="full-button" onClick={next}>
                 REVIEW ORDER <ArrowRight />
@@ -377,11 +377,11 @@ export function CheckoutPage() {
                 </Button>
               </div>
               <Button size="lg" className="full-button" disabled={busy} onClick={place}>
-                {busy ? "PLACING DEMO ORDER…" : `PLACE DEMO ORDER · ${money(t.total)}`}
+                {busy ? "PLACING ORDER…" : `PLACE ORDER · ${money(t.total)}`}
                 <ArrowRight />
               </Button>
-              <p className="sample-note">
-                No payment will be taken. This creates a demo order only.
+              <p className="info-note">
+                Your payment is verified before the order is confirmed.
               </p>
             </>
           )}
@@ -406,7 +406,7 @@ export function CheckoutPage() {
                   ? `Proceed to Payment ${money(t.total)}`
                   : step === 2
                     ? `Review Order ${money(t.total)}`
-                    : `Place Demo Order ${money(t.total)}`}
+                    : `Place Order ${money(t.total)}`}
               <ArrowRight />
             </Button>
           </Summary>

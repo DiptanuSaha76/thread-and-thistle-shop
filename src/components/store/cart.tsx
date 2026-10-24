@@ -111,7 +111,7 @@ export function CartPage() {
               </div>
               <section className="promo-panel">
                 <h3>Have a promo code?</h3>
-                <p>Demo offer: YEARTH10 takes 10% off your items.</p>
+                <p>Offer: YEARTH10 takes 10% off your items.</p>
                 <div className="promo-entry">
                   <input
                     className="field"

@@ -2,11 +2,11 @@
 - [x] Add protected admin sign-in and secure email-confirmed password setup for the designated administrator.
 - [x] Connect admin products, orders, users, support messages, and settings to persistent data.
 - [ ] Verify authenticated admin writes and persistence — waiting for the owner to create the admin account and confirm its email; signed-out protection and responsive sign-in verified.
-- [x] Build shared visual system, shell, catalogue, and local prototype state.
+- [x] Build shared visual system, shell, catalogue, and local browser state.
 - [x] Build home, listings, product detail, cart, checkout, orders, account, and information pages.
 - [x] Verify shopping flow, order actions, filters, and responsive layouts at required widths.
 - [x] Add reference-matched login, signup, verification, and password recovery pages.
-- [ ] Connect real customer authentication and private profiles, replacing demo account access.
+- [ ] Connect real customer authentication and private profiles, replacing placeholder account access.
 - [ ] Verify account flows, privacy boundaries, and mobile/desktop layouts.
 - [ ] Add signup country/mobile fields and linked SMS/email verification screens.- [ ] Database: products/variants, orders, support messages, page views, settings, admin role.
 - [ ] Storefront reads products/settings from database; real orders, contact messages, traffic.
