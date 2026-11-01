@@ -6,5 +6,6 @@
 - Persist browser state after hydration, validate restored data, and keep order/payment flows separate from production services.
 - Reuse store product cards, pricing summaries, accessible Radix dialogs, and design-system buttons throughout the storefront to keep behaviour consistent.
 - Define visual styling in the shared semantic CSS design system; route modules own unique page metadata and delegate screen content to focused store modules.
-- Keep phone verification attached to the existing email account using Auth phone-change OTP after email confirmation; never create a second phone-only account or silently confirm an email.
-- Keep pending mobile verification in tab-scoped storage, never in customer profiles or URL parameters, to preserve profile field limits and avoid leaking contact data.
+- Keep phone verification attached to the existing email account: the server sends an SMS code (OneAPI, src/lib/phone-verification) to the number saved on the signed-in customer's profile, stores only an HMAC of the code, and only public.phone_otp_verify may set profiles.phone_verified_at; never create a second phone-only account or silently confirm an email.
+- Never accept the number to verify from the browser; keep pending verification state in the server-only phone_verification_challenges table, never in customer profiles, browser storage or URL parameters.
+- Use Shiprocket for tracking only (admins enter the AWB as the order's tracking number); never call billable shipping endpoints, and never change order status from tracking or webhook data without an agreed status mapping.

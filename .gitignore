@@ -32,3 +32,8 @@ build/
 .env
 .env.*
 !.env.example
+
+# Supabase CLI temp files and local backups
+supabase/.temp/
+backups/
+*.patch

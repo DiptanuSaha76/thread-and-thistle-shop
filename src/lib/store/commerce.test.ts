@@ -1,6 +1,23 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { totals, lineKey, stock, products, hydrateProducts } from "./catalogue";
-import { fetchPublicCatalogue } from "./functions";
+import { fetchPublicCatalogue } from "./functions.server";
+
+// The catalogue is read on the server with the service-role client; tests never reach a real database.
+vi.mock("@/integrations/supabase/client.server", () => {
+  const empty = { data: [], error: null };
+  return {
+    supabaseAdmin: {
+      from: (table: string) => ({
+        select: () =>
+          table === "products"
+            ? { eq: () => ({ order: async () => empty }) }
+            : table === "store_settings"
+              ? { eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }
+              : Promise.resolve(empty),
+      }),
+    },
+  };
+});
 describe("YEARTH commerce", () => {
   it("returns zero totals when no live products are loaded", () =>
     expect(totals([{ productId: "missing", colour: "Black", size: "M", quantity: 1 }])).toEqual({

@@ -1,8 +1,21 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
+import { useAuth } from "@/lib/auth";
 import { getPublicCatalogue } from "./functions";
+import { addMessage, addToBag, setLineQuantity, type AddMode, type AddOutcome } from "./bag";
+import { dbErrorKey, isNetworkFailure, NETWORK_MESSAGE, orderErrorMessage } from "./errors";
+import {
+  CheckoutError,
+  mergeCarts,
+  ORDER_COLUMNS,
+  sanitizeCart,
+  sanitizeWishlist,
+  toOrder,
+  type OrderRow,
+} from "./orders";
 import {
   colourHex,
   hydrateProducts,
@@ -19,85 +32,66 @@ import {
   type Product,
 } from "./catalogue";
 
+export type PaymentChoice = "cod" | "razorpay";
+
 type Store = {
   cart: CartLine[];
   wishlist: string[];
   orders: Order[];
   promo: string;
+  /** Discount percent for `promo`, confirmed by the database (0 when none). */
+  promoPercent: number;
   profile: string;
   ready: boolean;
   catalogueReady: boolean;
   catalogueError: string | null;
   version: number;
-  add: (l: CartLine) => void;
+  /** Adds to the bag (see ./bag for the rules) and tells the customer what happened unless `quiet`. */
+  add: (l: CartLine, options?: { mode?: AddMode; quiet?: boolean }) => AddOutcome;
   quantity: (key: string, n: number) => void;
   remove: (key: string) => void;
   wish: (id: string) => void;
-  setPromo: (s: string) => void;
-  placeOrder: (address: Address, payment: string) => Promise<Order>;
+  /** Checks a promo code with the database and applies it. Returns a message to show. */
+  applyPromo: (code: string) => Promise<{ ok: boolean; message: string }>;
+  clearPromo: () => void;
+  /** Creates the order in the database. Does not empty the bag (see completeCheckout). */
+  createOrder: (address: Address, payment: PaymentChoice, idempotencyKey: string) => Promise<Order>;
+  /** Empties the bag and refreshes stock and orders after a successful checkout. */
+  completeCheckout: () => Promise<void>;
   cancel: (id: string) => Promise<void>;
+  /** Cancels an unpaid online order (e.g. payment window closed). Returns an error message or null. */
+  cancelUnpaid: (dbId: string) => Promise<string | null>;
+  refreshOrders: () => Promise<void>;
   setProfile: (s: string) => void;
 };
 
 const Context = createContext<Store | undefined>(undefined);
 
-type OrderRow = {
-  id: string;
-  order_number: string;
-  created_at: string;
-  status: string;
-  subtotal: number;
-  shipping: number;
-  discount: number;
-  total: number;
-  payment_method: string;
-  tracking_number: string | null;
-  ship_name: string;
-  ship_phone: string;
-  ship_address: string;
-  ship_city: string;
-  ship_state: string;
-  ship_pincode: string;
-  order_items: { product_id: string | null; colour: string; size: string; quantity: number }[];
-};
-
-const toOrder = (o: OrderRow): Order => ({
-  id: o.order_number,
-  dbId: o.id,
-  createdAt: o.created_at,
-  status: o.status as Order["status"],
-  items: o.order_items.map((i) => ({
-    productId: i.product_id ?? "",
-    colour: i.colour,
-    size: i.size,
-    quantity: i.quantity,
-  })),
-  subtotal: o.subtotal,
-  shipping: o.shipping,
-  discount: o.discount,
-  total: o.total,
-  tracking: o.tracking_number,
-  paymentMethod: o.payment_method === "cod" ? "Cash on Delivery" : "Online payment",
-  shippingAddress: {
-    fullName: o.ship_name,
-    phone: o.ship_phone,
-    address: o.ship_address,
-    city: o.ship_city,
-    state: o.ship_state,
-    pincode: o.ship_pincode,
-  },
-});
-
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [cart, setCart] = useState<CartLine[]>([]),
+  const { user, ready: authReady } = useAuth();
+  const userId = user?.id ?? null;
+  const [cart, setCartState] = useState<CartLine[]>([]),
     [wishlist, setWishlist] = useState<string[]>([]),
     [orders, setOrders] = useState<Order[]>([]),
     [promo, setPromo] = useState(""),
+    [promoPercent, setPromoPercent] = useState(0),
     [profile, setProfile] = useState(""),
     [ready, setReady] = useState(false),
     [catalogueReady, setCatalogueReady] = useState(false),
     [catalogueError, setCatalogueError] = useState<string | null>(null),
-    [version, setVersion] = useState(0);
+    [version, setVersion] = useState(0),
+    // The account whose saved bag has been merged into this browser's bag.
+    [syncedUserId, setSyncedUserId] = useState<string | null>(null);
+  const previousUserId = useRef<string | null>(null);
+  // The bag as it is right now, including changes React has not rendered yet. Adds read this,
+  // so several adds in a row (e.g. "Buy again") and their messages are always based on the
+  // latest bag, never on a stale copy.
+  const cartRef = useRef<CartLine[]>([]);
+  const setCart = useCallback((next: CartLine[] | ((previous: CartLine[]) => CartLine[])) => {
+    const value = typeof next === "function" ? next(cartRef.current) : next;
+    cartRef.current = value;
+    setCartState(value);
+  }, []);
 
   const fetchCatalogue = useServerFn(getPublicCatalogue);
 
@@ -142,13 +136,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCatalogueError(null);
   };
 
-  const loadOrders = async () => {
+  const fetchOrderRow = async (id: string) => {
+    const { data, error } = await supabase.from("orders").select(ORDER_COLUMNS).eq("id", id).single();
+    if (error || !data) throw new CheckoutError("Your order was placed but its details could not be loaded. Please check My Orders.", null);
+    return toOrder(data as unknown as OrderRow);
+  };
+
+  const loadOrders = useCallback(async () => {
     const { data: auth } = await supabase.auth.getSession();
     if (!auth.session) return setOrders([]);
 
     const { data, error } = await supabase
       .from("orders")
-      .select("*, order_items(product_id,colour,size,quantity)")
+      .select(ORDER_COLUMNS)
       .eq("user_id", auth.session.user.id)
       .order("created_at", { ascending: false });
 
@@ -156,7 +156,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       console.error("[YEARTH] Could not load customer orders:", error.message);
       return;
     }
-    setOrders(((data ?? []) as OrderRow[]).map(toOrder));
+    setOrders(((data ?? []) as unknown as OrderRow[]).map(toOrder));
+  }, []);
+
+  const checkPromo = async (code: string) => {
+    const { data, error } = await supabase.rpc("check_promo_code", { p_code: code });
+    if (error) throw error;
+    return typeof data === "number" && data > 0 ? data : null;
   };
 
   useEffect(() => {
@@ -180,39 +186,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         const d = JSON.parse(localStorage.getItem("yearth-store-v2") ?? "null");
         if (d) {
-          if (Array.isArray(d.cart))
-            setCart(
-              d.cart
-                .filter(
-                  (l: CartLine) =>
-                    products.some((p) => p.id === l.productId) &&
-                    typeof l.size === "string" &&
-                    typeof l.colour === "string" &&
-                    Number.isInteger(l.quantity) &&
-                    l.quantity > 0,
-                )
-                .map((l: CartLine) => ({ ...l, quantity: Math.min(l.quantity, 10) })),
-            );
-          if (Array.isArray(d.wishlist))
-            setWishlist(d.wishlist.filter((id: string) => products.some((p) => p.id === id)));
-          if (typeof d.promo === "string") setPromo(d.promo);
+          setCart(sanitizeCart(d.cart));
+          setWishlist(sanitizeWishlist(d.wishlist));
           if (typeof d.profile === "string") setProfile(d.profile);
+          if (typeof d.promo === "string" && d.promo) {
+            // Re-check saved codes; they may have expired since they were applied.
+            checkPromo(d.promo)
+              .then((percent) => {
+                if (!alive || !percent) return;
+                setPromo(d.promo);
+                setPromoPercent(percent);
+              })
+              .catch((error) => console.warn("[YEARTH] Could not re-check the saved promo code:", error));
+          }
         }
       } catch (error) {
         console.warn("[YEARTH] Could not restore saved store state:", error);
       }
 
       setReady(true);
-      void loadOrders();
     })();
-
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN" || event === "SIGNED_OUT") void loadOrders();
-    });
 
     return () => {
       alive = false;
-      sub.subscription.unsubscribe();
     };
   }, []);
 
@@ -226,54 +222,175 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [cart, wishlist, promo, profile, ready]);
 
-  const add = (l: CartLine) => {
-    const product = products.find((p) => p.id === l.productId);
-    if (!product || stock(product, l.colour, l.size) === 0) {
-      toast.error("This variant is out of stock");
+  // Explicit sign-out only: don't leave the previous customer's bag on a shared device.
+  // (Their bag stays saved in their account and comes back when they sign in.)
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== "SIGNED_OUT") return;
+      setCart([]);
+      setWishlist([]);
+      setPromo("");
+      setPromoPercent(0);
+      setProfile("");
+      setOrders([]);
+      setSyncedUserId(null);
+    });
+    return () => data.subscription.unsubscribe();
+  }, [setCart]);
+
+  // Sign-in: load orders and merge the saved bag into this browser's bag.
+  useEffect(() => {
+    if (!authReady || !ready) return;
+    const previous = previousUserId.current;
+    previousUserId.current = userId;
+    if (!userId) {
+      setSyncedUserId(null);
+      setOrders([]);
       return;
     }
-    const max = Math.min(10, stock(product, l.colour, l.size));
-    setCart((prev) => {
-      const old = prev.find((x) => lineKey(x) === lineKey(l));
-      return old
-        ? prev.map((x) =>
-            lineKey(x) === lineKey(l) ? { ...x, quantity: Math.min(max, x.quantity + l.quantity) } : x,
-          )
-        : [...prev, { ...l, quantity: Math.min(max, l.quantity) }];
-    });
-    toast.success("Added to your bag");
+    if (previous === userId) return;
+    void loadOrders();
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("customer_carts")
+        .select("items, wishlist, promo_code")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        // Keep the local bag; it is not written to the account until the saved bag can be read.
+        console.error("[YEARTH] Could not load the saved bag:", error.message);
+        return;
+      }
+      if (data) {
+        setCart((local) => mergeCarts(sanitizeCart(data.items), local));
+        setWishlist((local) => [...new Set([...sanitizeWishlist(data.wishlist), ...local])].slice(0, 200));
+        if (data.promo_code) {
+          const code = data.promo_code;
+          checkPromo(code)
+            .then((percent) => {
+              if (cancelled || !percent) return;
+              setPromo((current) => current || code);
+              setPromoPercent((current) => current || percent);
+            })
+            .catch((e) => console.warn("[YEARTH] Could not re-check the saved promo code:", e));
+        }
+      }
+      setSyncedUserId(userId);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, ready, userId, loadOrders, setCart]);
+
+  // Save the bag to the customer's account (debounced) once the saved bag has been merged.
+  useEffect(() => {
+    if (!userId || syncedUserId !== userId) return;
+    const timer = setTimeout(() => {
+      void supabase
+        .from("customer_carts")
+        .upsert({
+          user_id: userId,
+          items: cart as unknown as Json,
+          wishlist: wishlist as unknown as Json,
+          promo_code: promo || null,
+          updated_at: new Date().toISOString(),
+        })
+        .then(({ error }) => {
+          if (error) console.error("[YEARTH] Could not save the bag to the account:", error.message);
+        });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [cart, wishlist, promo, userId, syncedUserId]);
+
+  const available = (l: Pick<CartLine, "productId" | "colour" | "size">) => {
+    const product = products.find((p) => p.id === l.productId);
+    return product ? stock(product, l.colour, l.size) : 0;
   };
 
-  const placeOrder = async (address: Address, payment: string) => {
+  const add = (l: CartLine, options: { mode?: AddMode; quiet?: boolean } = {}) => {
+    const { bag, outcome } = addToBag(cartRef.current, l, available(l), options.mode);
+    if (bag !== cartRef.current) setCart(bag);
+    if (!options.quiet) {
+      const message = addMessage(outcome);
+      if (message.tone === "success") toast.success(message.text);
+      else if (message.tone === "error") toast.error(message.text);
+      else toast(message.text);
+    }
+    return outcome;
+  };
+
+  const applyPromo = async (code: string) => {
+    const trimmed = code.trim().toUpperCase();
+    if (!trimmed) return { ok: false, message: "Enter a promo code." };
+    try {
+      const percent = await checkPromo(trimmed);
+      if (!percent) {
+        setPromo("");
+        setPromoPercent(0);
+        return { ok: false, message: "That promo code isn't valid." };
+      }
+      setPromo(trimmed);
+      setPromoPercent(percent);
+      return { ok: true, message: `Applied! Enjoy ${percent}% off your items.` };
+    } catch (error) {
+      return {
+        ok: false,
+        message: isNetworkFailure(error) ? NETWORK_MESSAGE : "We couldn't check that code. Please try again.",
+      };
+    }
+  };
+
+  const createOrder = async (address: Address, payment: PaymentChoice, idempotencyKey: string) => {
     const { data: auth } = await supabase.auth.getSession();
-    if (!auth.session) throw new Error("Please sign in to place your order.");
+    if (!auth.session) throw new CheckoutError("Please sign in to place your order.", "AUTH_REQUIRED");
 
-    const { data, error } = await supabase.rpc("place_order", {
-      p_items: cart,
-      p_shipping: address,
-      p_payment: payment === "cod" ? "cod" : "razorpay",
-      p_promo: promo,
+    const { data, error } = await supabase.rpc("create_order", {
+      p_items: cart.map((l) => ({ productId: l.productId, colour: l.colour, size: l.size, quantity: l.quantity })),
+      p_shipping: { ...address },
+      p_payment: payment,
+      p_idempotency_key: idempotencyKey,
+      ...(promo ? { p_promo: promo } : {}),
     });
-    if (error) throw new Error(error.message);
-    const result = data as { id: string };
+    if (error) {
+      const code = dbErrorKey(error);
+      if (!code) console.error("[YEARTH] Order creation failed:", error.message);
+      if (code === "INVALID_PROMO") {
+        setPromo("");
+        setPromoPercent(0);
+      }
+      if (code === "OUT_OF_STOCK" || code === "PRODUCT_UNAVAILABLE") {
+        void loadCatalogue()
+          .then(() => setVersion((n) => n + 1))
+          .catch(() => undefined);
+      }
+      throw new CheckoutError(orderErrorMessage(error), code);
+    }
+    const result = data as { id?: unknown } | null;
+    if (!result || typeof result.id !== "string") {
+      throw new CheckoutError("We couldn't confirm your order. Please check My Orders before trying again.", null);
+    }
+    return fetchOrderRow(result.id);
+  };
 
-    const { data: row, error: orderError } = await supabase
-      .from("orders")
-      .select("*, order_items(product_id,colour,size,quantity)")
-      .eq("id", result.id)
-      .single();
-    if (orderError || !row) throw new Error(orderError?.message ?? "The order was placed but its details could not be loaded.");
-
+  const completeCheckout = async () => {
     setCart([]);
     setPromo("");
+    setPromoPercent(0);
     try {
       await loadCatalogue();
       setVersion((n) => n + 1);
     } catch (error) {
       console.error("[YEARTH] Catalogue refresh after order failed:", error);
     }
-    void loadOrders();
-    return toOrder(row as OrderRow);
+    await loadOrders();
+  };
+
+  const cancelUnpaid = async (dbId: string) => {
+    const { error } = await supabase.rpc("cancel_order", { p_order: dbId });
+    await loadOrders();
+    return error ? orderErrorMessage(error) : null;
   };
 
   return (
@@ -283,40 +400,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         wishlist,
         orders,
         promo,
+        promoPercent,
         profile,
         ready,
         catalogueReady,
         catalogueError,
         version,
         add,
-        quantity: (key, n) =>
-          setCart((prev) =>
-            prev.map((l) => (lineKey(l) === key ? { ...l, quantity: Math.max(1, Math.min(10, n)) } : l)),
-          ),
+        quantity: (key, n) => {
+          const line = cartRef.current.find((l) => lineKey(l) === key);
+          if (line) setCart((prev) => setLineQuantity(prev, key, n, available(line)));
+        },
         remove: (key) => {
-          const old = cart.find((l) => lineKey(l) === key);
+          const old = cartRef.current.find((l) => lineKey(l) === key);
           setCart((prev) => prev.filter((l) => lineKey(l) !== key));
           toast("Removed from your bag", {
             action: {
               label: "Undo",
               onClick: () => {
-                if (old) add(old);
+                // Puts back exactly what was removed (never doubles it if it was re-added).
+                if (old) add(old, { mode: "ensure" });
               },
             },
           });
         },
         wish: (id) =>
           setWishlist((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])),
-        setPromo,
-        placeOrder,
+        applyPromo,
+        clearPromo: () => {
+          setPromo("");
+          setPromoPercent(0);
+        },
+        createOrder,
+        completeCheckout,
         cancel: async (id) => {
           const order = orders.find((o) => o.id === id);
           if (!order?.dbId) return;
-          const { error } = await supabase.rpc("cancel_my_order", { p_order: order.dbId });
-          if (error) toast.error(error.message);
+          const { error } = await supabase.rpc("cancel_order", { p_order: order.dbId });
+          if (error) toast.error(orderErrorMessage(error));
           else toast.success("Order cancelled");
           await loadOrders();
         },
+        cancelUnpaid,
+        refreshOrders: loadOrders,
         setProfile,
       }}
     >
