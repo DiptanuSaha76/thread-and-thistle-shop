@@ -82,7 +82,16 @@ export function Swatches({
     </div>
   );
 }
-export function Quantity({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+export function Quantity({
+  value,
+  onChange,
+  max = 10,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  /** Highest value the + button allows (e.g. the stock left). */
+  max?: number;
+}) {
   return (
     <div className="quantity">
       <Button
@@ -99,7 +108,7 @@ export function Quantity({ value, onChange }: { value: number; onChange: (n: num
         variant="ghost"
         size="icon"
         aria-label="Increase quantity"
-        disabled={value >= 10}
+        disabled={value >= max}
         onClick={() => onChange(value + 1)}
       >
         <Plus />
@@ -247,8 +256,8 @@ export function TrustStrip() {
   );
 }
 export function Summary({ children, items = false }: { children?: ReactNode; items?: boolean }) {
-  const { cart, promo } = useStore();
-  const t = totals(cart, promo);
+  const { cart, promoPercent } = useStore();
+  const t = totals(cart, promoPercent);
   return (
     <aside className="summary">
       <h2>Order Summary</h2>
