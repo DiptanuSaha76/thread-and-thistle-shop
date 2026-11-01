@@ -16,6 +16,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CartRouteImport } from './routes/cart'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as CollectionsRouteImport } from './routes/collections'
+import { Route as CompleteProfileRouteImport } from './routes/complete-profile'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as HelpRouteImport } from './routes/help'
@@ -28,10 +29,13 @@ import { Route as ShopRouteImport } from './routes/shop'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as VerifyRouteImport } from './routes/verify'
+import { Route as VerifyPhoneRouteImport } from './routes/verify-phone'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as CollectionsIndexRouteImport } from './routes/collections.index'
 import { Route as CollectionsSlugRouteImport } from './routes/collections.$slug'
 import { Route as ProductsSlugRouteImport } from './routes/products.$slug'
+import { Route as ApiCronExpireOrdersRouteImport } from './routes/api.cron.expire-orders'
+import { Route as ApiRazorpayWebhookRouteImport } from './routes/api.razorpay.webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -66,6 +70,11 @@ const CheckoutRoute = CheckoutRouteImport.update({
 const CollectionsRoute = CollectionsRouteImport.update({
   id: '/collections',
   path: '/collections',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompleteProfileRoute = CompleteProfileRouteImport.update({
+  id: '/complete-profile',
+  path: '/complete-profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContactRoute = ContactRouteImport.update({
@@ -128,6 +137,11 @@ const VerifyRoute = VerifyRouteImport.update({
   path: '/verify',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VerifyPhoneRoute = VerifyPhoneRouteImport.update({
+  id: '/verify-phone',
+  path: '/verify-phone',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -148,6 +162,16 @@ const ProductsSlugRoute = ProductsSlugRouteImport.update({
   path: '/products/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronExpireOrdersRoute = ApiCronExpireOrdersRouteImport.update({
+  id: '/api/cron/expire-orders',
+  path: '/api/cron/expire-orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRazorpayWebhookRoute = ApiRazorpayWebhookRouteImport.update({
+  id: '/api/razorpay/webhook',
+  path: '/api/razorpay/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -157,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
   '/collections': typeof CollectionsRouteWithChildren
+  '/complete-profile': typeof CompleteProfileRoute
   '/contact': typeof ContactRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/help': typeof HelpRoute
@@ -169,10 +194,13 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
+  '/verify-phone': typeof VerifyPhoneRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/collections/': typeof CollectionsIndexRoute
+  '/api/cron/expire-orders': typeof ApiCronExpireOrdersRoute
+  '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -180,6 +208,7 @@ export interface FileRoutesByTo {
   '/account': typeof AccountRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
+  '/complete-profile': typeof CompleteProfileRoute
   '/contact': typeof ContactRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/help': typeof HelpRoute
@@ -192,10 +221,13 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
+  '/verify-phone': typeof VerifyPhoneRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
   '/admin': typeof AdminIndexRoute
   '/collections': typeof CollectionsIndexRoute
+  '/api/cron/expire-orders': typeof ApiCronExpireOrdersRoute
+  '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -206,6 +238,7 @@ export interface FileRoutesById {
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
   '/collections': typeof CollectionsRouteWithChildren
+  '/complete-profile': typeof CompleteProfileRoute
   '/contact': typeof ContactRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/help': typeof HelpRoute
@@ -218,10 +251,13 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
+  '/verify-phone': typeof VerifyPhoneRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/collections/': typeof CollectionsIndexRoute
+  '/api/cron/expire-orders': typeof ApiCronExpireOrdersRoute
+  '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -233,6 +269,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/checkout'
     | '/collections'
+    | '/complete-profile'
     | '/contact'
     | '/forgot-password'
     | '/help'
@@ -245,10 +282,13 @@ export interface FileRouteTypes {
     | '/signup'
     | '/terms'
     | '/verify'
+    | '/verify-phone'
     | '/collections/$slug'
     | '/products/$slug'
     | '/admin/'
     | '/collections/'
+    | '/api/cron/expire-orders'
+    | '/api/razorpay/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -256,6 +296,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/cart'
     | '/checkout'
+    | '/complete-profile'
     | '/contact'
     | '/forgot-password'
     | '/help'
@@ -268,10 +309,13 @@ export interface FileRouteTypes {
     | '/signup'
     | '/terms'
     | '/verify'
+    | '/verify-phone'
     | '/collections/$slug'
     | '/products/$slug'
     | '/admin'
     | '/collections'
+    | '/api/cron/expire-orders'
+    | '/api/razorpay/webhook'
   id:
     | '__root__'
     | '/'
@@ -281,6 +325,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/checkout'
     | '/collections'
+    | '/complete-profile'
     | '/contact'
     | '/forgot-password'
     | '/help'
@@ -293,10 +338,13 @@ export interface FileRouteTypes {
     | '/signup'
     | '/terms'
     | '/verify'
+    | '/verify-phone'
     | '/collections/$slug'
     | '/products/$slug'
     | '/admin/'
     | '/collections/'
+    | '/api/cron/expire-orders'
+    | '/api/razorpay/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -307,6 +355,7 @@ export interface RootRouteChildren {
   CartRoute: typeof CartRoute
   CheckoutRoute: typeof CheckoutRoute
   CollectionsRoute: typeof CollectionsRouteWithChildren
+  CompleteProfileRoute: typeof CompleteProfileRoute
   ContactRoute: typeof ContactRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   HelpRoute: typeof HelpRoute
@@ -319,7 +368,10 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   TermsRoute: typeof TermsRoute
   VerifyRoute: typeof VerifyRoute
+  VerifyPhoneRoute: typeof VerifyPhoneRoute
   ProductsSlugRoute: typeof ProductsSlugRoute
+  ApiCronExpireOrdersRoute: typeof ApiCronExpireOrdersRoute
+  ApiRazorpayWebhookRoute: typeof ApiRazorpayWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -371,6 +423,13 @@ declare module '@tanstack/react-router' {
       path: '/collections'
       fullPath: '/collections'
       preLoaderRoute: typeof CollectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/complete-profile': {
+      id: '/complete-profile'
+      path: '/complete-profile'
+      fullPath: '/complete-profile'
+      preLoaderRoute: typeof CompleteProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contact': {
@@ -457,6 +516,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/verify-phone': {
+      id: '/verify-phone'
+      path: '/verify-phone'
+      fullPath: '/verify-phone'
+      preLoaderRoute: typeof VerifyPhoneRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/': {
       id: '/admin/'
       path: '/'
@@ -483,6 +549,20 @@ declare module '@tanstack/react-router' {
       path: '/products/$slug'
       fullPath: '/products/$slug'
       preLoaderRoute: typeof ProductsSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/expire-orders': {
+      id: '/api/cron/expire-orders'
+      path: '/api/cron/expire-orders'
+      fullPath: '/api/cron/expire-orders'
+      preLoaderRoute: typeof ApiCronExpireOrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/razorpay/webhook': {
+      id: '/api/razorpay/webhook'
+      path: '/api/razorpay/webhook'
+      fullPath: '/api/razorpay/webhook'
+      preLoaderRoute: typeof ApiRazorpayWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -520,6 +600,7 @@ const rootRouteChildren: RootRouteChildren = {
   CartRoute: CartRoute,
   CheckoutRoute: CheckoutRoute,
   CollectionsRoute: CollectionsRouteWithChildren,
+  CompleteProfileRoute: CompleteProfileRoute,
   ContactRoute: ContactRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   HelpRoute: HelpRoute,
@@ -532,7 +613,10 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   TermsRoute: TermsRoute,
   VerifyRoute: VerifyRoute,
+  VerifyPhoneRoute: VerifyPhoneRoute,
   ProductsSlugRoute: ProductsSlugRoute,
+  ApiCronExpireOrdersRoute: ApiCronExpireOrdersRoute,
+  ApiRazorpayWebhookRoute: ApiRazorpayWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

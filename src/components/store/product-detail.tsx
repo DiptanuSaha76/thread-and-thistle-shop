@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Breadcrumb, Swatches, Quantity, Benefits, Related, Modal } from "./shared";
 import { useStore } from "@/lib/store/state";
+import { inBagAfter, MAX_PER_LINE, remainingFor } from "@/lib/store/bag";
 import { Reviews } from "./reviews";
 import { money, sizes, imageFor, productColours, productSizes, stock, type Product } from "@/lib/store/catalogue";
 export function ProductDetail({ product }: { product: Product }) {
@@ -30,15 +31,27 @@ export function ProductDetail({ product }: { product: Product }) {
     .slice(0, 6);
   const productSizeList = productSizes(product);
   const available = stock(product, colour, size) > 0;
+  // How many more of this colour/size can go in the bag (stock and the per-item limit,
+  // minus what is already there). The picker never offers more than that.
+  const left = size
+    ? remainingFor(
+        store.cart,
+        { productId: product.id, colour, size },
+        stock(product, colour, size),
+      )
+    : MAX_PER_LINE;
+  const pick = Math.max(1, Math.min(quantity, left));
   const add = (buy = false) => {
     if (!size) {
       setError("Please select a size before adding to your bag.");
       return;
     }
     if (!available) return;
-    store.add({ productId: product.id, colour, size, quantity });
+    const line = { productId: product.id, colour, size, quantity: pick };
+    // Buy now makes sure the item is in the bag; it does not add a second one.
+    const outcome = store.add(line, buy ? { mode: "ensure" } : undefined);
     setError("");
-    if (buy) navigate({ to: "/checkout" });
+    if (buy && inBagAfter(outcome)) navigate({ to: "/checkout" });
   };
   return (
     <>
@@ -160,7 +173,7 @@ export function ProductDetail({ product }: { product: Product }) {
               )}
             </div>
             <div className="purchase-meta">
-              <Quantity value={quantity} onChange={setQuantity} />
+              <Quantity value={pick} onChange={setQuantity} max={Math.max(1, left)} />
               <span className={available ? "stock text-success" : "stock text-destructive"}>
                 <Check size={14} />
                 {available ? "In Stock" : "Out of stock"}

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowRight,
   Check,
@@ -15,7 +16,18 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Summary, Benefits } from "./shared";
 import { useStore } from "@/lib/store/state";
+import { CheckoutError } from "@/lib/store/orders";
 import { totals, money, type Address, type Order } from "@/lib/store/catalogue";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth, useCompleteProfileGate } from "@/lib/auth";
+import { confirmOnlinePayment, getPaymentOptions, startOnlinePayment } from "@/lib/payments/functions";
+import { payWithRazorpay } from "@/lib/payments/razorpay-checkout";
+
+type PaymentId = "upi" | "card" | "netbanking" | "cod";
+const onlineMethods: PaymentId[] = ["upi", "card", "netbanking"];
+const newKey = () => crypto.randomUUID();
+/** Indian mobile as 10 digits (accepts +91 / 91 prefixes and spaces). */
+const tenDigits = (phone: string) => phone.replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
 const emptyAddress: Address = {
   fullName: "",
   phone: "",
@@ -64,25 +76,90 @@ const states = [
 ];
 export function CheckoutPage() {
   const store = useStore();
+  const { user, ready: authReady } = useAuth();
+  const navigate = useNavigate();
+  const holdForProfile = useCompleteProfileGate("/checkout");
+  const fetchPaymentOptions = useServerFn(getPaymentOptions);
+  const startPayment = useServerFn(startOnlinePayment);
+  const confirmPayment = useServerFn(confirmOnlinePayment);
   const [address, setAddress] = useState<Address>(emptyAddress),
     [errors, setErrors] = useState<Partial<Address>>({}),
     [step, setStep] = useState(1),
-    [payment, setPayment] = useState("cod"),
+    [payment, setPayment] = useState<PaymentId>("cod"),
+    [options, setOptions] = useState<{ cod: boolean; online: boolean } | null>(null),
     [save, setSave] = useState(false),
     [busy, setBusy] = useState(false),
     [placed, setPlaced] = useState<Order | null>(null);
-  const t = totals(store.cart, store.promo);
+  // One key per checkout attempt: a retried request returns the same order instead of a duplicate.
+  const attemptKey = useRef(newKey());
+  const placing = useRef(false);
+  const t = totals(store.cart, store.promoPercent);
+
+  // Orders belong to an account: send signed-out shoppers to log in, then back here.
+  useEffect(() => {
+    if (authReady && !user && !placed)
+      navigate({ to: "/login", search: { next: "/checkout" }, replace: true });
+  }, [authReady, user, placed, navigate]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchPaymentOptions()
+      .then((result) => {
+        if (!alive) return;
+        setOptions(result);
+        if (!result.cod && result.online) setPayment("upi");
+      })
+      .catch((error) => {
+        console.error("[checkout] Payment options could not be loaded:", error);
+        // The database still checks the method when the order is placed.
+        if (alive) setOptions({ cod: true, online: false });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [fetchPaymentOptions]);
+
+  // Prefill: this tab's draft first, otherwise the customer's default saved address.
   useEffect(() => {
     try {
-      const saved = JSON.parse(
-        sessionStorage.getItem("yearth-checkout") ??
-          localStorage.getItem("yearth-address") ??
-          "null",
-      );
-      if (saved && Object.keys(emptyAddress).every((key) => typeof saved[key] === "string"))
-        setAddress(saved);
-    } catch {}
-  }, []);
+      const draft = JSON.parse(sessionStorage.getItem("yearth-checkout") ?? "null");
+      if (draft && Object.keys(emptyAddress).every((key) => typeof draft[key] === "string")) {
+        setAddress(draft);
+        return;
+      }
+    } catch {
+      // Ignore an unreadable draft.
+    }
+    if (!user) return;
+    let alive = true;
+    supabase
+      .from("yearth_addresses")
+      .select("full_name, phone, line1, line2, city, state, pincode")
+      .eq("user_id", user.id)
+      .order("is_default", { ascending: false })
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) console.error("[checkout] Saved address could not be loaded:", error.message);
+        if (!alive || !data) return;
+        setAddress((current) =>
+          Object.values(current).some((v) => v.trim())
+            ? current
+            : {
+                fullName: data.full_name,
+                phone: data.phone,
+                address: [data.line1, data.line2].filter(Boolean).join(", "),
+                city: data.city,
+                state: data.state,
+                pincode: data.pincode,
+              },
+        );
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user]);
   const update = (key: keyof Address, value: string) => {
     const next = { ...address, [key]: value };
     setAddress(next);
@@ -103,31 +180,151 @@ export function CheckoutPage() {
     setErrors(e);
     return Object.keys(e).length === 0;
   };
+  // Until the server answers, assume Cash on Delivery only; the database checks again at order time.
+  const isAvailable = (method: PaymentId) =>
+    onlineMethods.includes(method) ? !!options?.online : (options?.cod ?? true);
   const next = () => {
     if (step === 1 && !validate()) return;
+    if (step === 2 && !isAvailable(payment)) {
+      toast.error("That payment method isn't available right now. Please choose another one.");
+      return;
+    }
     setStep(Math.min(3, step + 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-  const place = async () => {
-    if (busy || !validate() || !store.cart.length) return;
-    setBusy(true);
-    let order: Order;
-    try {
-      order = await store.placeOrder({ ...address }, payment);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Order could not be placed");
-      setBusy(false);
-      return;
-    }
+  /** Saves the delivery address to the customer's account ("Save this address" box). */
+  const saveAddressToAccount = async () => {
+    if (!user) return;
+    const phone = tenDigits(address.phone);
+    const { data: existing, error: readError } = await supabase
+      .from("yearth_addresses")
+      .select("id, line1, pincode")
+      .eq("user_id", user.id);
+    if (readError) throw readError;
+    const line1 = address.address.trim().slice(0, 200);
+    if (existing.some((a) => a.line1 === line1 && a.pincode === address.pincode)) return;
+    const { error } = await supabase.from("yearth_addresses").insert({
+      user_id: user.id,
+      label: existing.length ? "Other" : "Home",
+      full_name: address.fullName.trim(),
+      phone,
+      line1,
+      city: address.city.trim(),
+      state: address.state,
+      pincode: address.pincode,
+      is_default: existing.length === 0,
+    });
+    if (error) throw error;
+  };
+
+  const finish = async (order: Order) => {
     setPlaced(order);
-    if (save)
-      try {
-        localStorage.setItem("yearth-address", JSON.stringify(address));
-      } catch {}
-    setBusy(false);
+    attemptKey.current = newKey();
     try {
       sessionStorage.removeItem("yearth-checkout");
-    } catch {}
+    } catch {
+      // Draft cleanup is best-effort.
+    }
+    if (save)
+      await saveAddressToAccount().catch((error) => {
+        console.error("[checkout] Address could not be saved:", error);
+        toast.error("Your order is placed, but the address could not be saved to your account.");
+      });
+    await store.completeCheckout();
+  };
+
+  const place = async () => {
+    if (busy || placing.current || !validate() || !store.cart.length) return;
+    if (!user) {
+      navigate({ to: "/login", search: { next: "/checkout" } });
+      return;
+    }
+    const online = onlineMethods.includes(payment);
+    if (options && (online ? !options.online : !options.cod)) {
+      toast.error("That payment method isn't available right now. Please choose another one.");
+      return;
+    }
+    placing.current = true;
+    setBusy(true);
+    try {
+      let order: Order;
+      try {
+        order = await store.createOrder({ ...address }, online ? "razorpay" : "cod", attemptKey.current);
+      } catch (error) {
+        if (error instanceof CheckoutError && error.code) {
+          attemptKey.current = newKey(); // nothing was created; the next attempt is a new request
+          if (error.code === "PROFILE_INCOMPLETE") {
+            navigate({ to: "/complete-profile", search: { next: "/checkout" } });
+            return;
+          }
+        }
+        toast.error(error instanceof Error ? error.message : "Your order could not be placed. Please try again.");
+        return;
+      }
+      if (!online) {
+        await finish(order);
+        return;
+      }
+
+      // Online payment: the server creates the Razorpay order for the database total.
+      const dbId = order.dbId ?? "";
+      let session;
+      try {
+        session = await startPayment({ data: { orderId: dbId } });
+      } catch (error) {
+        await store.cancelUnpaid(dbId);
+        attemptKey.current = newKey();
+        toast.error(error instanceof Error ? error.message : "Online payment isn't available right now.");
+        return;
+      }
+      const result = await payWithRazorpay({
+        ...session,
+        method: payment as Exclude<PaymentId, "cod">,
+        customer: { name: address.fullName, email: user.email ?? "", contact: `+91${tenDigits(address.phone)}` },
+      }).catch((error: unknown) => {
+        console.error("[checkout] Payment window failed:", error);
+        return "failed" as const;
+      });
+      if (result === null || result === "failed") {
+        const cancelError = await store.cancelUnpaid(dbId);
+        attemptKey.current = newKey();
+        if (cancelError) toast.error(cancelError);
+        else
+          toast(
+            result === null
+              ? "Payment was not completed, so your order was not placed. Your bag is unchanged."
+              : "The payment window could not open. Your order was not placed; please try again.",
+          );
+        return;
+      }
+      try {
+        const confirmation = await confirmPayment({
+          data: {
+            orderId: dbId,
+            razorpayOrderId: result.razorpay_order_id,
+            razorpayPaymentId: result.razorpay_payment_id,
+            razorpaySignature: result.razorpay_signature,
+          },
+        });
+        if (confirmation.status === "refund_needed") {
+          toast.error("Your payment arrived after the order expired. We will refund it; please contact us if you need help.");
+          await store.completeCheckout();
+          navigate({ to: "/orders" });
+          return;
+        }
+        if (confirmation.status === "processing")
+          toast("Payment received. We're confirming it with the bank; your order will update shortly.");
+        await finish(order);
+      } catch (error) {
+        // The payment may still be confirmed by the webhook, so the order is not cancelled.
+        toast.error(error instanceof Error ? error.message : "We couldn't confirm your payment yet.");
+        await store.completeCheckout();
+        navigate({ to: "/orders" });
+      }
+    } finally {
+      placing.current = false;
+      setBusy(false);
+    }
   };
   if (placed)
     return (
@@ -154,6 +351,12 @@ export function CheckoutPage() {
         <Link className="text-link" to="/shop">
           Continue shopping
         </Link>
+      </section>
+    );
+  if (!authReady || !user || holdForProfile)
+    return (
+      <section className="container empty-state" aria-busy="true">
+        <p>Preparing secure checkout…</p>
       </section>
     );
   if (!store.cart.length)
@@ -307,35 +510,42 @@ export function CheckoutPage() {
                   ["cod", "Cash on Delivery", "Pay at your doorstep", Wallet],
                 ].map(([id, label, desc, Icon]) => {
                   const I = Icon as typeof Wallet;
+                  const method = id as PaymentId;
+                  const unavailable = !isAvailable(method);
                   return (
                     <label
                       key={String(id)}
                       className={`payment-option ${payment === id ? "selected" : ""}`}
+                      aria-disabled={unavailable || undefined}
+                      style={unavailable ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
                     >
                       <input
                         type="radio"
                         name="payment"
                         value={String(id)}
                         checked={payment === id}
-                        onChange={() => setPayment(String(id))}
+                        disabled={unavailable}
+                        onChange={() => setPayment(method)}
                       />
                       <I size={23} />
                       <span>
                         <b>{String(label)}</b>
-                        <small>{String(desc)}</small>
+                        <small>{unavailable ? "Not available yet" : String(desc)}</small>
                       </span>
                     </label>
                   );
                 })}
               </div>
               <div className="payment-notice">
-                {payment === "upi"
-                  ? "UPI payment redirects to your selected app to complete the purchase."
-                  : payment === "card"
-                    ? "Card details are processed securely through our payment provider."
-                    : payment === "netbanking"
-                      ? "Bank selection and authorisation continue through the payment provider."
-                      : "Cash on Delivery selected."}
+                {!isAvailable(payment)
+                  ? "This payment method isn't available right now. Please choose another one."
+                  : payment === "upi"
+                    ? "UPI payment opens our secure payment window to complete the purchase."
+                    : payment === "card"
+                      ? "Card details are processed securely through our payment provider."
+                      : payment === "netbanking"
+                        ? "Bank selection and authorisation continue through the payment provider."
+                        : "Cash on Delivery selected."}
                 <p>Your order is reviewed before payment is confirmed.</p>
               </div>
               <Button size="lg" className="full-button" onClick={next}>

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-export const adminEmail = 'diptanusaha54@gmail.com';
+// Admin access comes only from public.user_roles (checked on the server); no email address grants it.
 export const adminRoleAllowed = (role: unknown) => role === true;
 export const productInput = z.object({
   id: z.string().uuid().optional(), name: z.string().trim().min(1).max(160),

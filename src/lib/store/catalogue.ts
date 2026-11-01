@@ -182,9 +182,13 @@ export type Address = {
 export type Order = {
   id: string;
   createdAt: string;
-  status: "Processing" | "Shipped" | "Delivered" | "Cancelled";
+  /** "Awaiting payment" = an online-payment order whose payment is not confirmed yet. */
+  status: "Awaiting payment" | "Processing" | "Shipped" | "Delivered" | "Cancelled";
   dbId?: string;
   tracking?: string | null;
+  /** When the order was marked Shipped / Delivered (recorded by the database; null if not recorded). */
+  shippedAt?: string | null;
+  deliveredAt?: string | null;
   items: CartLine[];
   subtotal: number;
   shipping: number;
@@ -197,13 +201,20 @@ export type Order = {
 export const money = (n: number) => "₹" + n.toLocaleString("en-IN");
 export const lineKey = (line: CartLine) => [line.productId, line.colour, line.size].join("|");
 
-export function totals(lines: CartLine[], promo = "") {
+/**
+ * Display estimate of the bag total. The order total that is charged is always
+ * recalculated by the database (public.create_order) from live prices, the
+ * store's shipping rules and the promo code table, using the same formula.
+ * `promoPercent` is the percent confirmed by public.check_promo_code.
+ */
+export function totals(lines: CartLine[], promoPercent = 0) {
   const subtotal = lines.reduce(
     (sum, l) => sum + (products.find((p) => p.id === l.productId)?.price ?? 0) * l.quantity,
     0,
   );
   const shipping = subtotal === 0 || subtotal > shopSettings.freeShippingThreshold ? 0 : shopSettings.shippingFee;
-  const discount = promo === "YEARTH10" ? Math.round(subtotal * 0.1) : 0;
+  const percent = Number.isInteger(promoPercent) && promoPercent > 0 && promoPercent <= 100 ? promoPercent : 0;
+  const discount = Math.round((subtotal * percent) / 100);
   return { subtotal, shipping, discount, total: subtotal + shipping - discount };
 }
 

@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 import type { FormEvent, ComponentType, ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { User } from "@supabase/supabase-js";
+import { getPhoneVerificationStatus } from "@/lib/phone-verification/functions";
+import { submitContactMessage } from "@/lib/support/functions";
+import type { Tables } from "@/integrations/supabase/types";
+import { nameProblem, useAuth, useCompleteProfileGate } from "@/lib/auth";
+import { parseInternationalPhone } from "@/lib/phone";
+import { accountErrorMessage, profileErrorMessage } from "@/lib/store/errors";
 import { toast } from "sonner";
 import { ArrowRight, UserRound, Package, Heart, Headphones, MapPin, CreditCard, ShieldCheck, Settings2, LogOut, Plus, Trash2, Check, Bell, ChevronRight, LayoutDashboard, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,16 +51,35 @@ const accountTabs = [
 
 type AccountTab = (typeof accountTabs)[number]["id"];
 
+type AddressRow = Pick<
+  Tables<"yearth_addresses">,
+  "id" | "label" | "full_name" | "phone" | "line1" | "line2" | "city" | "state" | "pincode" | "is_default"
+>;
+const toSavedAddress = (row: AddressRow): SavedAddress => ({
+  id: row.id, label: row.label, fullName: row.full_name, phone: row.phone,
+  line1: row.line1, line2: row.line2 ?? "", city: row.city, state: row.state,
+  pincode: row.pincode, isDefault: Boolean(row.is_default),
+});
+/** Indian mobile as 10 digits (delivery addresses are within India). */
+const indianDigits = (value: string) => value.replace(/\D/g, "").replace(/^(91|0)(?=[6-9]\d{9}$)/, "");
+/** Same rules as the database constraint on saved addresses. */
+function addressProblem(d: { label: string; fullName: string; phone: string; line1: string; line2: string; city: string; state: string; pincode: string }) {
+  if (!d.fullName.trim() || !d.line1.trim() || !d.city.trim() || !d.state.trim()) return "Please fill in the name, address, city and state.";
+  if (!/^[6-9]\d{9}$/.test(indianDigits(d.phone))) return "Enter a valid 10-digit Indian mobile number for this address.";
+  if (!/^[1-9]\d{5}$/.test(d.pincode.trim())) return "Enter a valid 6-digit pincode.";
+  if (d.line1.trim().length > 200 || d.line2.trim().length > 200 || d.city.trim().length > 80 || d.state.trim().length > 80 || d.fullName.trim().length > 120 || d.label.trim().length > 40) return "Some address details are too long.";
+  return null;
+}
+
 export function AccountPage() {
   const store = useStore();
   const navigate = useNavigate();
-  const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const { user, ready, profile, profileReady, profileError, refreshProfile, signOut: endSession } = useAuth();
+  const holdForProfile = useCompleteProfileGate("/account");
   const [dataLoading, setDataLoading] = useState(true);
   const [accountError, setAccountError] = useState("");
   const [activeTab, setActiveTab] = useState<AccountTab>("overview");
   const [name, setName] = useState(store.profile || "");
-  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [payments, setPayments] = useState<SavedPayment[]>([]);
@@ -64,93 +90,97 @@ export function AccountPage() {
   const [paymentDraft, setPaymentDraft] = useState({ holder: "", brand: "Visa", last4: "" });
   const [newsletter, setNewsletter] = useState(true);
   const [orderUpdates, setOrderUpdates] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
   const wishlistItems = products.filter((p) => store.wishlist.includes(p.id));
+  const email = user?.email ?? "";
+  const userId = user?.id ?? null;
 
   useEffect(() => {
+    if (ready && !user) window.location.replace("/login?next=%2Faccount");
+  }, [ready, user]);
+
+  // Name and phone come from public.profiles (loaded by the AuthProvider).
+  useEffect(() => {
+    if (!profile) return;
+    const displayName = profile.name || `${profile.first_name} ${profile.last_name}`.trim();
+    setName(displayName);
+    setPhone(profile.phone);
+    if (displayName) store.setProfile(displayName);
+  }, [profile, store.setProfile]);
+
+  useEffect(() => {
+    if (!userId) return;
     let active = true;
-    const loadAccount = async (currentUser: User | null) => {
-      if (!active) return;
-      setUser(currentUser);
-      setAuthLoading(false);
-      if (!currentUser) {
-        setDataLoading(false);
-        store.setProfile("");
-        window.location.replace("/login");
-        return;
-      }
+    (async () => {
       setDataLoading(true);
       setAccountError("");
-      setEmail(currentUser.email ?? "");
-      try {
-        // The cast allows this file to compile before Supabase Database types are regenerated.
-        const db = supabase as any;
-        const [profileResult, addressResult, preferenceResult] = await Promise.all([
-          db.from("yearth_profiles").select("full_name, phone").eq("user_id", currentUser.id).maybeSingle(),
-          db.from("yearth_addresses").select("id, label, full_name, phone, line1, line2, city, state, pincode, is_default").eq("user_id", currentUser.id).order("created_at", { ascending: true }),
-          db.from("yearth_account_preferences").select("newsletter, order_updates").eq("user_id", currentUser.id).maybeSingle(),
-        ]);
-        if (!active) return;
-        if (profileResult.error) throw profileResult.error;
-        if (addressResult.error) throw addressResult.error;
-        if (preferenceResult.error) throw preferenceResult.error;
-        const profile = profileResult.data;
-        const displayName = profile?.full_name || currentUser.user_metadata?.["full_name"] || currentUser.user_metadata?.["name"] || "";
-        setName(displayName);
-        setPhone(profile?.phone || "");
-        if (displayName) store.setProfile(displayName);
-        setAddresses((addressResult.data ?? []).map((row: any) => ({
-          id: row.id, label: row.label, fullName: row.full_name, phone: row.phone,
-          line1: row.line1, line2: row.line2 ?? "", city: row.city, state: row.state,
-          pincode: row.pincode, isDefault: Boolean(row.is_default),
-        })));
-        const prefs = preferenceResult.data;
-        setNewsletter(prefs?.newsletter ?? true);
-        setOrderUpdates(prefs?.order_updates ?? true);
-        // Payment labels deliberately remain local-only; no full card data is stored.
-        try {
-          const savedPayments = JSON.parse(localStorage.getItem("yearth-account-payments") || "[]");
-          setPayments(Array.isArray(savedPayments) ? savedPayments : []);
-        } catch { setPayments([]); }
-      } catch (error) {
-        console.error("Unable to load account data:", error);
-        if (active) setAccountError("Your account data could not be loaded. Please refresh and try again.");
-      } finally {
-        if (active) setDataLoading(false);
+      const [addressResult, preferenceResult] = await Promise.all([
+        supabase
+          .from("yearth_addresses")
+          .select("id, label, full_name, phone, line1, line2, city, state, pincode, is_default")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("yearth_account_preferences")
+          .select("newsletter, order_updates")
+          .eq("user_id", userId)
+          .maybeSingle(),
+      ]);
+      if (!active) return;
+      if (addressResult.error || preferenceResult.error) {
+        console.error("Unable to load account data:", addressResult.error ?? preferenceResult.error);
+        setAccountError("Your account data could not be loaded. Please refresh and try again.");
       }
-    };
-
-    supabase.auth.getUser().then(({ data, error }) => {
-      if (error) console.error("Unable to verify Supabase session:", error);
-      void loadAccount(data.user ?? null);
-    });
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      void loadAccount(session?.user ?? null);
-    });
+      setAddresses((addressResult.data ?? []).map(toSavedAddress));
+      setNewsletter(preferenceResult.data?.newsletter ?? true);
+      setOrderUpdates(preferenceResult.data?.order_updates ?? true);
+      // Payment labels deliberately remain local-only; no card data is stored.
+      try {
+        const savedPayments = JSON.parse(localStorage.getItem("yearth-account-payments") || "[]");
+        setPayments(Array.isArray(savedPayments) ? savedPayments : []);
+      } catch {
+        setPayments([]);
+      }
+      setDataLoading(false);
+    })();
     return () => {
       active = false;
-      authListener.subscription.unsubscribe();
     };
-  }, [store.setProfile]);
+  }, [userId]);
 
-  const persistProfile = async (nextName = name, _nextEmail = email, nextPhone = phone) => {
-    if (!user) return;
+  const persistProfile = async () => {
+    if (!user || savingProfile) return;
     setAccountError("");
-    const { error } = await (supabase as any).from("yearth_profiles").upsert({
-      user_id: user.id,
-      full_name: nextName.trim(),
-      phone: nextPhone.trim(),
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" });
-    if (error) {
-      setAccountError(error.message || "Profile could not be saved.");
-      toast.error("Profile could not be saved");
+    if (!name.trim()) {
+      setAccountError("Full name is required");
       return;
     }
-    if (nextName.trim()) store.setProfile(nextName.trim());
-    setName(nextName.trim());
-    setPhone(nextPhone.trim());
-    setEmail(user.email ?? "");
-    toast.success("Profile details saved");
+    if (nameProblem(name, "First name")) {
+      setAccountError("Enter a valid full name using letters, spaces, hyphens or apostrophes");
+      return;
+    }
+    const parsed = parseInternationalPhone(phone, profile?.phone_country || "IN");
+    if (!parsed) {
+      setAccountError("Enter a valid mobile number, for example +91 98765 43210.");
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const { error } = await supabase.rpc("save_my_profile", {
+        p_name: name.trim(),
+        p_phone: parsed.phone,
+        p_phone_country: parsed.country,
+      });
+      if (error) {
+        setAccountError(profileErrorMessage(error));
+        toast.error("Profile could not be saved");
+        return;
+      }
+      await refreshProfile();
+      toast.success("Profile details saved");
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   const persistAddresses = (next: SavedAddress[]) => setAddresses(next);
@@ -162,7 +192,7 @@ export function AccountPage() {
 
   const openNewAddress = () => {
     setEditingAddress(null);
-    setAddressDraft({ label: "Home", fullName: name, phone, line1: "", line2: "", city: "", state: "", pincode: "" });
+    setAddressDraft({ label: "Home", fullName: name, phone: indianDigits(phone), line1: "", line2: "", city: "", state: "", pincode: "" });
     setAddressFormOpen(true);
   };
 
@@ -170,24 +200,28 @@ export function AccountPage() {
     e.preventDefault();
     if (!user) return;
     setAccountError("");
+    const problem = addressProblem(addressDraft);
+    if (problem) {
+      setAccountError(problem);
+      return;
+    }
     const isDefault = editingAddress?.isDefault ?? addresses.length === 0;
     const payload = {
-      user_id: user.id, label: addressDraft.label, full_name: addressDraft.fullName.trim(),
-      phone: addressDraft.phone.trim(), line1: addressDraft.line1.trim(), line2: addressDraft.line2.trim(),
-      city: addressDraft.city.trim(), state: addressDraft.state.trim(), pincode: addressDraft.pincode,
+      user_id: user.id, label: addressDraft.label.trim() || "Home", full_name: addressDraft.fullName.trim(),
+      phone: indianDigits(addressDraft.phone), line1: addressDraft.line1.trim(), line2: addressDraft.line2.trim(),
+      city: addressDraft.city.trim(), state: addressDraft.state.trim(), pincode: addressDraft.pincode.trim(),
       is_default: isDefault,
     };
-    const db = supabase as any;
+    const columns = "id, label, full_name, phone, line1, line2, city, state, pincode, is_default";
     const result = editingAddress
-      ? await db.from("yearth_addresses").update(payload).eq("id", editingAddress.id).eq("user_id", user.id).select("id, label, full_name, phone, line1, line2, city, state, pincode, is_default").single()
-      : await db.from("yearth_addresses").insert(payload).select("id, label, full_name, phone, line1, line2, city, state, pincode, is_default").single();
+      ? await supabase.from("yearth_addresses").update(payload).eq("id", editingAddress.id).eq("user_id", user.id).select(columns).single()
+      : await supabase.from("yearth_addresses").insert(payload).select(columns).single();
     if (result.error) {
-      setAccountError(result.error.message || "Address could not be saved.");
+      setAccountError(accountErrorMessage(result.error, "Saving the address"));
       toast.error("Address could not be saved");
       return;
     }
-    const row = result.data;
-    const address: SavedAddress = { id: row.id, label: row.label, fullName: row.full_name, phone: row.phone, line1: row.line1, line2: row.line2 ?? "", city: row.city, state: row.state, pincode: row.pincode, isDefault: Boolean(row.is_default) };
+    const address = toSavedAddress(result.data);
     persistAddresses(editingAddress ? addresses.map((item) => item.id === address.id ? address : item) : [...addresses, address]);
     setAddressFormOpen(false);
     setEditingAddress(null);
@@ -205,39 +239,56 @@ export function AccountPage() {
 
   const setDefaultAddress = async (id: string) => {
     if (!user) return;
-    const db = supabase as any;
-    const clearResult = await db.from("yearth_addresses").update({ is_default: false }).eq("user_id", user.id);
-    if (clearResult.error) { toast.error("Default address could not be changed"); return; }
-    const result = await db.from("yearth_addresses").update({ is_default: true }).eq("id", id).eq("user_id", user.id);
-    if (result.error) { toast.error("Default address could not be changed"); return; }
+    // One database call, so there is never zero or two default addresses.
+    const { error } = await supabase.rpc("set_default_address", { p_address: id });
+    if (error) {
+      toast.error(accountErrorMessage(error, "Changing the default address"));
+      return;
+    }
     persistAddresses(addresses.map((item) => ({ ...item, isDefault: item.id === id })));
     toast.success("Default address updated");
   };
+
+  const removeAddress = async (address: SavedAddress) => {
+    if (!user) return;
+    const { error } = await supabase.from("yearth_addresses").delete().eq("id", address.id).eq("user_id", user.id);
+    if (error) {
+      setAccountError(accountErrorMessage(error, "Removing the address"));
+      toast.error("Address could not be removed");
+      return;
+    }
+    const remaining = addresses.filter((item) => item.id !== address.id);
+    persistAddresses(remaining);
+    if (address.isDefault && remaining[0]) await setDefaultAddress(remaining[0].id);
+    toast.success("Address removed");
+  };
+
   const setDefaultPayment = (id: string) => persistPayments(payments.map((item) => ({ ...item, isDefault: item.id === id })));
   const savePreferences = async (nextNewsletter = newsletter, nextOrderUpdates = orderUpdates) => {
     if (!user) return;
     setAccountError("");
-    const { error } = await (supabase as any).from("yearth_account_preferences").upsert({
+    const { error } = await supabase.from("yearth_account_preferences").upsert({
       user_id: user.id, newsletter: nextNewsletter, order_updates: nextOrderUpdates,
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
-    if (error) { setAccountError(error.message || "Preferences could not be saved."); toast.error("Preferences could not be saved"); return; }
+    if (error) { setAccountError(accountErrorMessage(error, "Saving your preferences")); toast.error("Preferences could not be saved"); return; }
     setNewsletter(nextNewsletter);
     setOrderUpdates(nextOrderUpdates);
     toast.success("Preferences updated");
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) { toast.error(error.message || "Sign out failed"); return; }
     store.setProfile("");
-    setUser(null);
     toast.success("Signed out successfully");
-    window.location.replace("/login");
+    await endSession();
   };
 
   const tabTitle = accountTabs.find((tab) => tab.id === activeTab)?.label || "Overview";
 
+  if (profileError) {
+    return <main className="container standard-page account-page !max-w-[1500px]"><div role="alert" className="rounded-2xl border border-red-300 bg-red-50 p-8 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{profileError}</div></main>;
+  }
+  const authLoading = !ready || !user || !profileReady || holdForProfile;
   if (authLoading || dataLoading) {
     return <main className="container standard-page account-page !max-w-[1500px]"><div className="rounded-2xl border border-neutral-200 p-8 text-sm text-neutral-500 dark:border-neutral-800">Loading your YEARTH account…</div></main>;
   }
@@ -303,11 +354,11 @@ export function AccountPage() {
             <section className="rounded-2xl border border-neutral-200 p-5 dark:border-neutral-800"><div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">Your wishlist</h2><p className="mt-1 text-sm text-neutral-500">The pieces you’ve saved for later.</p></div><button type="button" onClick={() => setActiveTab("wishlist")} className="inline-flex items-center gap-2 text-sm font-medium underline underline-offset-4">View wishlist <ArrowRight size={15} /></button></div>{wishlistItems.length ? <ProductGrid items={wishlistItems.slice(0, 4)} /> : <p className="rounded-xl bg-neutral-50 px-4 py-6 text-center text-sm text-neutral-500 dark:bg-neutral-900">Your saved favourites will appear here. Browse the collection to add some.</p>}</section>
           </div>}
 
-          {activeTab === "profile" && <section className="rounded-2xl border border-neutral-200 p-5 sm:p-8 dark:border-neutral-800"><SectionHeading eyebrow="YOUR DETAILS" title="Personal profile" subtitle="Keep your contact details up to date for a smoother checkout." /><form className="mt-7 grid gap-5 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); persistProfile(); }}><Field label="Full name"><input className="field" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Your full name" /></Field><Field label="Email address"><input className="field" type="email" value={email} readOnly aria-describedby="account-email-help" placeholder="you@example.com" /></Field><p id="account-email-help" className="text-xs text-neutral-500 sm:col-span-2">Email is managed by Supabase Auth and cannot be changed from this profile form.</p><Field label="Phone number"><input className="field" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" /></Field><div className="flex items-end"><Button type="submit" size="lg" className="w-full sm:w-auto">SAVE PROFILE <Check size={16} /></Button></div></form><p className="mt-5 text-xs leading-5 text-neutral-500">Your name and phone number are saved to your signed-in account. Your email address comes from Supabase Auth and is managed through your sign-in settings.</p></section>}
+          {activeTab === "profile" && <section className="rounded-2xl border border-neutral-200 p-5 sm:p-8 dark:border-neutral-800"><SectionHeading eyebrow="YOUR DETAILS" title="Personal profile" subtitle="Keep your contact details up to date for a smoother checkout." /><form className="mt-7 grid gap-5 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); persistProfile(); }}><Field label="Full name"><input className="field" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Your full name" /></Field><Field label="Email address"><input className="field" type="email" value={email} readOnly aria-describedby="account-email-help" placeholder="you@example.com" /></Field><p id="account-email-help" className="text-xs text-neutral-500 sm:col-span-2">Email is managed by Supabase Auth and cannot be changed from this profile form.</p><Field label="Phone number"><input className="field" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" /></Field><div className="flex items-end"><Button type="submit" size="lg" className="w-full sm:w-auto">SAVE PROFILE <Check size={16} /></Button></div><PhoneVerificationNote phone={profile?.phone ?? ""} /></form><p className="mt-5 text-xs leading-5 text-neutral-500">Your name and phone number are saved to your signed-in account. Your email address comes from Supabase Auth and is managed through your sign-in settings.</p></section>}
 
           {activeTab === "addresses" && <section className="rounded-2xl border border-neutral-200 p-5 sm:p-8 dark:border-neutral-800"><div className="flex flex-wrap items-start justify-between gap-4"><SectionHeading eyebrow="DELIVERY DETAILS" title="Your addresses" subtitle="Save addresses for faster checkout next time." /><Button onClick={openNewAddress}><Plus size={17} /> ADD ADDRESS</Button></div>
             {addressFormOpen && <form onSubmit={saveAddress} className="mt-6 rounded-xl bg-neutral-50 p-4 sm:p-6 dark:bg-neutral-900"><div className="mb-4 flex items-center justify-between"><h3 className="font-semibold">{editingAddress ? "Edit address" : "Add a new address"}</h3><button type="button" onClick={() => setAddressFormOpen(false)} aria-label="Close address form"><X size={18} /></button></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Address label"><select className="field" value={addressDraft.label} onChange={(e) => setAddressDraft({ ...addressDraft, label: e.target.value })}><option>Home</option><option>Work</option><option>Other</option></select></Field><Field label="Full name"><input className="field" required value={addressDraft.fullName} onChange={(e) => setAddressDraft({ ...addressDraft, fullName: e.target.value })} /></Field><Field label="Phone number"><input className="field" required type="tel" value={addressDraft.phone} onChange={(e) => setAddressDraft({ ...addressDraft, phone: e.target.value })} /></Field><Field label="Address line 1"><input className="field" required value={addressDraft.line1} onChange={(e) => setAddressDraft({ ...addressDraft, line1: e.target.value })} placeholder="House / flat, street" /></Field><Field label="Address line 2 (optional)"><input className="field" value={addressDraft.line2} onChange={(e) => setAddressDraft({ ...addressDraft, line2: e.target.value })} placeholder="Landmark, area" /></Field><Field label="City"><input className="field" required value={addressDraft.city} onChange={(e) => setAddressDraft({ ...addressDraft, city: e.target.value })} /></Field><Field label="State"><input className="field" required value={addressDraft.state} onChange={(e) => setAddressDraft({ ...addressDraft, state: e.target.value })} /></Field><Field label="PIN code"><input className="field" required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={addressDraft.pincode} onChange={(e) => setAddressDraft({ ...addressDraft, pincode: e.target.value.replace(/\D/g, "") })} /></Field></div><div className="mt-5 flex flex-wrap gap-3"><Button type="submit">SAVE ADDRESS</Button><Button type="button" variant="outline" onClick={() => setAddressFormOpen(false)}>CANCEL</Button></div></form>}
-            <div className="mt-6 grid gap-4 md:grid-cols-2">{addresses.map((address) => <article key={address.id} className="rounded-xl border border-neutral-200 p-5 dark:border-neutral-800"><div className="flex items-center justify-between gap-3"><span className="inline-flex items-center gap-2 text-sm font-semibold"><MapPin size={17} /> {address.label}</span>{address.isDefault && <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide dark:bg-neutral-900">Default</span>}</div><p className="mt-4 font-medium">{address.fullName}</p><p className="mt-1 text-sm leading-6 text-neutral-500">{address.line1}{address.line2 ? `, ${address.line2}` : ""}<br />{address.city}, {address.state} {address.pincode}<br />{address.phone}</p><div className="mt-5 flex flex-wrap gap-3 border-t border-neutral-100 pt-4 dark:border-neutral-800">{!address.isDefault && <button type="button" onClick={() => setDefaultAddress(address.id)} className="text-xs font-medium underline underline-offset-4">Set as default</button>}<button type="button" onClick={() => { setEditingAddress(address); setAddressDraft({ label: address.label, fullName: address.fullName, phone: address.phone, line1: address.line1, line2: address.line2, city: address.city, state: address.state, pincode: address.pincode }); setAddressFormOpen(true); }} className="text-xs font-medium underline underline-offset-4">Edit</button><button type="button" onClick={() => { void (async () => { if (!user) return; const { error } = await (supabase as any).from("yearth_addresses").delete().eq("id", address.id).eq("user_id", user.id); if (error) { setAccountError(error.message || "Address could not be removed."); toast.error("Address could not be removed"); return; } const remaining = addresses.filter((item) => item.id !== address.id); if (address.isDefault && remaining[0]) { await setDefaultAddress(remaining[0].id); } persistAddresses(remaining.map((item, index) => ({ ...item, isDefault: address.isDefault ? index === 0 : item.isDefault }))); toast.success("Address removed"); })(); }} className="inline-flex items-center gap-1 text-xs text-red-600"><Trash2 size={13} /> Remove</button></div></article>)}{!addresses.length && !addressFormOpen && <EmptyState icon={MapPin} title="No saved addresses yet" text="Add your home or work address to make checkout quicker." action="ADD YOUR FIRST ADDRESS" onAction={openNewAddress} />}</div>
+            <div className="mt-6 grid gap-4 md:grid-cols-2">{addresses.map((address) => <article key={address.id} className="rounded-xl border border-neutral-200 p-5 dark:border-neutral-800"><div className="flex items-center justify-between gap-3"><span className="inline-flex items-center gap-2 text-sm font-semibold"><MapPin size={17} /> {address.label}</span>{address.isDefault && <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide dark:bg-neutral-900">Default</span>}</div><p className="mt-4 font-medium">{address.fullName}</p><p className="mt-1 text-sm leading-6 text-neutral-500">{address.line1}{address.line2 ? `, ${address.line2}` : ""}<br />{address.city}, {address.state} {address.pincode}<br />{address.phone}</p><div className="mt-5 flex flex-wrap gap-3 border-t border-neutral-100 pt-4 dark:border-neutral-800">{!address.isDefault && <button type="button" onClick={() => setDefaultAddress(address.id)} className="text-xs font-medium underline underline-offset-4">Set as default</button>}<button type="button" onClick={() => { setEditingAddress(address); setAddressDraft({ label: address.label, fullName: address.fullName, phone: address.phone, line1: address.line1, line2: address.line2, city: address.city, state: address.state, pincode: address.pincode }); setAddressFormOpen(true); }} className="text-xs font-medium underline underline-offset-4">Edit</button><button type="button" onClick={() => void removeAddress(address)} className="inline-flex items-center gap-1 text-xs text-red-600"><Trash2 size={13} /> Remove</button></div></article>)}{!addresses.length && !addressFormOpen && <EmptyState icon={MapPin} title="No saved addresses yet" text="Add your home or work address to make checkout quicker." action="ADD YOUR FIRST ADDRESS" onAction={openNewAddress} />}</div>
           </section>}
 
           {activeTab === "payments" && <section className="rounded-2xl border border-neutral-200 p-5 sm:p-8 dark:border-neutral-800"><div className="flex flex-wrap items-start justify-between gap-4"><SectionHeading eyebrow="CHECKOUT PREFERENCES" title="Payment methods" subtitle="Keep a note of your preferred payment method. No full card details are stored here." /><Button onClick={() => setPaymentFormOpen(true)}><Plus size={17} /> ADD METHOD</Button></div><div className="mt-5 flex items-start gap-3 rounded-xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300"><ShieldCheck size={19} className="mt-0.5 shrink-0" /><p>For your safety, this demo only stores the cardholder name, card brand and last four digits. Never enter your full card number, expiry or CVV here.</p></div>{paymentFormOpen && <form onSubmit={savePayment} className="mt-5 rounded-xl border border-neutral-200 p-4 sm:p-5 dark:border-neutral-800"><div className="grid gap-4 sm:grid-cols-3"><Field label="Cardholder name"><input className="field" required value={paymentDraft.holder} onChange={(e) => setPaymentDraft({ ...paymentDraft, holder: e.target.value })} /></Field><Field label="Payment brand"><select className="field" value={paymentDraft.brand} onChange={(e) => setPaymentDraft({ ...paymentDraft, brand: e.target.value })}><option>Visa</option><option>Mastercard</option><option>RuPay</option><option>UPI</option><option>Other</option></select></Field><Field label="Last four digits / UPI label"><input className="field" required minLength={4} maxLength={4} value={paymentDraft.last4} onChange={(e) => setPaymentDraft({ ...paymentDraft, last4: e.target.value.replace(/\s/g, "").slice(0, 4) })} placeholder="1234" /></Field></div><div className="mt-4 flex gap-3"><Button type="submit">SAVE METHOD</Button><Button type="button" variant="outline" onClick={() => setPaymentFormOpen(false)}>CANCEL</Button></div></form>}<div className="mt-6 grid gap-4 md:grid-cols-2">{payments.map((payment) => <article key={payment.id} className="rounded-xl border border-neutral-200 p-5 dark:border-neutral-800"><div className="flex items-start justify-between"><span className="flex h-11 w-14 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-900"><CreditCard size={22} /></span>{payment.isDefault && <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide dark:bg-neutral-900">Default</span>}</div><p className="mt-5 font-semibold">{payment.brand} ···· {payment.last4}</p><p className="mt-1 text-sm text-neutral-500">{payment.holder}</p><div className="mt-5 flex gap-4 border-t border-neutral-100 pt-4 dark:border-neutral-800">{!payment.isDefault && <button type="button" onClick={() => setDefaultPayment(payment.id)} className="text-xs font-medium underline underline-offset-4">Set as default</button>}<button type="button" onClick={() => { persistPayments(payments.filter((item) => item.id !== payment.id)); toast.success("Payment method removed"); }} className="inline-flex items-center gap-1 text-xs text-red-600"><Trash2 size={13} /> Remove</button></div></article>)}{!payments.length && !paymentFormOpen && <EmptyState icon={CreditCard} title="No payment methods saved" text="Add a payment label for your own reference. Actual payments should be handled by a secure payment provider." action="ADD PAYMENT METHOD" onAction={() => setPaymentFormOpen(true)} />}</div></section>}
@@ -321,6 +372,24 @@ export function AccountPage() {
       </div>
     </main>
   );
+}
+
+/** Shows whether the saved mobile number is verified (only once SMS verification is set up). */
+function PhoneVerificationNote({ phone }: { phone: string }) {
+  const { user } = useAuth();
+  const fetchStatus = useServerFn(getPhoneVerificationStatus);
+  const status = useQuery({
+    queryKey: ["phone-verification", user?.id, phone],
+    queryFn: () => fetchStatus(),
+    enabled: !!user && !!phone,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const s = status.data;
+  if (!s?.enabled || !s.hasPhone) return null;
+  if (s.verified) return <p className="inline-flex items-center gap-1 text-xs text-emerald-700 sm:col-span-2 dark:text-emerald-400"><Check size={14} /> Mobile number verified</p>;
+  if (!s.supported) return <p className="text-xs text-neutral-500 sm:col-span-2">SMS verification is currently available for Indian (+91) mobile numbers only.</p>;
+  return <p className="text-xs text-neutral-500 sm:col-span-2">Mobile number not verified. <Link to="/verify-phone" search={{ next: "/account" }} className="font-medium underline underline-offset-4">Verify now</Link></p>;
 }
 
 function SectionHeading({ eyebrow, title, subtitle }: { eyebrow: string; title: string; subtitle: string }) {
@@ -375,8 +444,10 @@ export function AboutPage() {
   );
 }
 export function ContactPage() {
+  const sendMessage = useServerFn(submitContactMessage);
   const [sent, setSent] = useState(false),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
   return (
     <section className="container standard-page contact-page">
       <Breadcrumb name="Contact" />
@@ -397,7 +468,7 @@ export function ContactPage() {
         {sent ? (
           <div className="contact-success">
             <h2>Thanks for reaching out.</h2>
-            <p>Your message has been sent successfully.</p>
+            <p>Your message has been received. Our team will reply to the email address you gave.</p>
             <Button variant="outline" onClick={() => setSent(false)}>
               Send another message
             </Button>
@@ -407,25 +478,42 @@ export function ContactPage() {
             onSubmit={async (e) => {
               e.preventDefault();
               if (busy) return;
+              const form = e.currentTarget;
+              const f = new FormData(form);
               setBusy(true);
-              await new Promise((r) => setTimeout(r, 400));
-              setSent(true);
-              setBusy(false);
+              setError("");
+              try {
+                await sendMessage({
+                  data: {
+                    name: String(f.get("name") ?? ""),
+                    email: String(f.get("email") ?? ""),
+                    topic: String(f.get("topic") ?? "") as "My order",
+                    message: String(f.get("message") ?? ""),
+                  },
+                });
+                form.reset();
+                setSent(true);
+              } catch (submitError) {
+                setError(submitError instanceof Error ? submitError.message : "We couldn't send your message. Please try again.");
+              } finally {
+                setBusy(false);
+              }
             }}
           >
             <label htmlFor="contact-name">Name</label>
-            <input id="contact-name" className="field" required />
+            <input id="contact-name" name="name" className="field" required maxLength={100} autoComplete="name" />
             <label htmlFor="contact-email">Email</label>
-            <input id="contact-email" type="email" className="field" required />
+            <input id="contact-email" name="email" type="email" className="field" required maxLength={255} autoComplete="email" />
             <label htmlFor="contact-topic">Topic</label>
-            <select id="contact-topic" className="field">
+            <select id="contact-topic" name="topic" className="field">
               <option>Product & sizing</option>
               <option>My order</option>
               <option>Returns & exchanges</option>
               <option>Something else</option>
             </select>
             <label htmlFor="contact-message">Message</label>
-            <textarea id="contact-message" className="field" required rows={5} />
+            <textarea id="contact-message" name="message" className="field" required minLength={10} maxLength={4000} rows={5} />
+            {error && <p className="field-error" role="alert">{error}</p>}
             <Button type="submit" size="lg" disabled={busy}>
               {busy ? "SENDING…" : "SEND MESSAGE"}
               <ArrowRight />
@@ -532,8 +620,9 @@ export function InformationPage({ type }: { type: string }) {
         <Button
           variant="outline"
           onClick={() => {
-            localStorage.removeItem("yearth-store-v1");
-            localStorage.removeItem("yearth-address");
+            // Browser copies only; data saved to a signed-in account stays in the account.
+            for (const key of ["yearth-store-v1", "yearth-store-v2", "yearth-address", "yearth-account-payments"])
+              localStorage.removeItem(key);
             sessionStorage.removeItem("yearth-checkout");
             window.location.reload();
           }}

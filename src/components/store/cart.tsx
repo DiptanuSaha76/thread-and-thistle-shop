@@ -4,26 +4,34 @@ import { ArrowRight, Heart, Trash2, ShoppingBag, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Breadcrumb, Quantity, Summary, Benefits, Related } from "./shared";
 import { useStore } from "@/lib/store/state";
-import { products, money, imageFor, lineKey, totals } from "@/lib/store/catalogue";
+import {
+  products,
+  money,
+  imageFor,
+  lineKey,
+  totals,
+  shopSettings,
+  stock,
+} from "@/lib/store/catalogue";
+import { lineLimit } from "@/lib/store/bag";
 export function CartPage() {
   const store = useStore();
   const [code, setCode] = useState(store.promo),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
-  const t = totals(store.cart, store.promo),
+  const t = totals(store.cart, store.promoPercent),
     count = store.cart.reduce((n, l) => n + l.quantity, 0);
   const apply = async () => {
+    if (busy) return;
     setBusy(true);
     setMessage("");
-    await new Promise((r) => setTimeout(r, 350));
-    if (code.trim().toUpperCase() === "YEARTH10") {
-      store.setPromo("YEARTH10");
-      setMessage("Applied! Enjoy 10% off your items.");
-    } else {
-      store.setPromo("");
-      setMessage("Invalid code. Try YEARTH10 for 10% off.");
+    try {
+      // Checked against the store's promo codes in the database.
+      const result = await store.applyPromo(code);
+      setMessage(result.message);
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
   return (
     <>
@@ -53,14 +61,15 @@ export function CartPage() {
             <div>
               <div className="shipping-message">
                 <Truck size={18} />
-                {t.subtotal > 999
+                {t.subtotal > shopSettings.freeShippingThreshold
                   ? "Your order qualifies for free shipping."
-                  : `Add ${money(1000 - t.subtotal)} more for free shipping.`}
+                  : `Add ${money(shopSettings.freeShippingThreshold + 1 - t.subtotal)} more for free shipping.`}
               </div>
               <div className="cart-lines">
                 {store.cart.map((l) => {
                   const p = products.find((p) => p.id === l.productId);
                   if (!p) return null;
+                  const inStock = stock(p, l.colour, l.size);
                   return (
                     <article className="cart-line" key={lineKey(l)}>
                       <Link to="/products/$slug" params={{ slug: p.slug }}>
@@ -84,7 +93,15 @@ export function CartPage() {
                         <Quantity
                           value={l.quantity}
                           onChange={(n) => store.quantity(lineKey(l), n)}
+                          max={Math.max(1, lineLimit(inStock))}
                         />
+                        {l.quantity > inStock && (
+                          <p className="field-error" role="status">
+                            {inStock === 0
+                              ? "Out of stock. Please remove this item."
+                              : `Only ${inStock} left in this size. Please reduce the quantity.`}
+                          </p>
+                        )}
                       </div>
                       <div className="cart-line-actions">
                         <Button
