@@ -9,12 +9,16 @@ import {
   Truck,
   Ruler,
   Check,
+  MapPin,
+  LoaderCircle,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Breadcrumb, Swatches, Quantity, Benefits, Related, Modal } from "./shared";
 import { useStore } from "@/lib/store/state";
 import { Reviews } from "./reviews";
 import { money, sizes, imageFor, productColours, productSizes, stock, type Product } from "@/lib/store/catalogue";
+
 export function ProductDetail({ product }: { product: Product }) {
   const store = useStore(),
     navigate = useNavigate();
@@ -24,12 +28,37 @@ export function ProductDetail({ product }: { product: Product }) {
     [error, setError] = useState(""),
     [guide, setGuide] = useState(false),
     [index, setIndex] = useState(0);
+
+  // Demo-only PIN checker: validates the format and simulates loading.
+  // It does not check real courier serviceability or delivery dates.
+  const [pin, setPin] = useState(""),
+    [pinError, setPinError] = useState(""),
+    [checkingPin, setCheckingPin] = useState(false),
+    [pinChecked, setPinChecked] = useState(false);
+
   const extra = (product.images ?? []).filter((x) => x !== imageFor(product, colour));
   const images = [imageFor(product, colour), ...extra, product.image]
     .filter((x, i, a) => x && a.indexOf(x) === i)
     .slice(0, 6);
   const productSizeList = productSizes(product);
   const available = stock(product, colour, size) > 0;
+
+  const checkPin = async () => {
+    if (!/^\d{6}$/.test(pin)) {
+      setPinError("Please enter a valid 6-digit PIN code.");
+      setPinChecked(false);
+      return;
+    }
+
+    setPinError("");
+    setPinChecked(false);
+    setCheckingPin(true);
+    // Intentional short delay for the demo loading animation only.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    setCheckingPin(false);
+    setPinChecked(true);
+  };
+
   const add = (buy = false) => {
     if (!size) {
       setError("Please select a size before adding to your bag.");
@@ -40,6 +69,7 @@ export function ProductDetail({ product }: { product: Product }) {
     setError("");
     if (buy) navigate({ to: "/checkout" });
   };
+
   return (
     <>
       <div className="container product-page">
@@ -97,6 +127,7 @@ export function ProductDetail({ product }: { product: Product }) {
               <span className="image-count">{index + 1} / {images.length}</span>
             </div>
           </div>
+
           <div className="product-info">
             {product.badge && <span className="info-badge">{product.badge}</span>}
             <h1>{product.name.toUpperCase()}</h1>
@@ -114,6 +145,7 @@ export function ProductDetail({ product }: { product: Product }) {
               {product.description ||
                 "Premium oversized t-shirt made with 240 GSM cotton. Designed for everyday comfort with a relaxed fit."}
             </p>
+
             <div className="variant-group">
               <p>
                 Colour: <b>{colour}</b>
@@ -127,6 +159,7 @@ export function ProductDetail({ product }: { product: Product }) {
                 }}
               />
             </div>
+
             <div className="variant-group">
               <div className="size-label">
                 <p>
@@ -159,6 +192,7 @@ export function ProductDetail({ product }: { product: Product }) {
                 </p>
               )}
             </div>
+
             <div className="purchase-meta">
               <Quantity value={quantity} onChange={setQuantity} />
               <span className={available ? "stock text-success" : "stock text-destructive"}>
@@ -166,9 +200,78 @@ export function ProductDetail({ product }: { product: Product }) {
                 {available ? "In Stock" : "Out of stock"}
               </span>
             </div>
-            <p className="delivery">
-              <Truck size={17} /> Ships in 1–2 days · Pan India delivery
-            </p>
+
+            {/* Demo-only PIN UI; no live delivery-service lookup is performed. */}
+            <section className="pin-checker" aria-labelledby="pin-checker-title">
+              <label id="pin-checker-title" className="pin-checker-label" htmlFor="delivery-pin">
+                Check delivery availability
+              </label>
+              <div className="pin-checker-row">
+                <div className={`pin-checker-input-wrap${pinError ? " has-error" : ""}`}>
+                  <MapPin size={17} aria-hidden="true" />
+                  <input
+                    id="delivery-pin"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="postal-code"
+                    maxLength={6}
+                    placeholder="Enter 6-digit PIN code"
+                    value={pin}
+                    aria-invalid={Boolean(pinError)}
+                    aria-describedby={pinError ? "pin-error" : "pin-demo-note"}
+                    onChange={(event) => {
+                      setPin(event.target.value.replace(/\D/g, "").slice(0, 6));
+                      setPinError("");
+                      setPinChecked(false);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void checkPin();
+                      }
+                    }}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="pin-check-button"
+                  disabled={checkingPin}
+                  onClick={() => void checkPin()}
+                >
+                  {checkingPin ? <LoaderCircle className="pin-spinner" size={16} /> : null}
+                  {checkingPin ? "Checking…" : "Check PIN"}
+                </Button>
+              </div>
+
+              {pinError ? (
+                <p className="pin-feedback pin-feedback-error" id="pin-error" role="alert">
+                  <AlertCircle size={15} /> {pinError}
+                </p>
+              ) : checkingPin ? (
+                <div className="pin-loading" role="status" aria-live="polite">
+                  <span className="pin-loading-track"><span /></span>
+                  <span>Running demo check…</span>
+                </div>
+              ) : pinChecked ? (
+                <div className="pin-result" role="status" aria-live="polite">
+                  <p className="pin-feedback pin-feedback-success">
+                    <Check size={15} /> Demo check complete for PIN {pin}.
+                  </p>
+                  <p className="delivery pin-shipping-text">
+                    <Truck size={17} /> Ships in 1–2 days · Pan India delivery
+                  </p>
+                  <p className="pin-demo-note" id="pin-demo-note">
+                    Demo preview only — actual delivery serviceability and timelines have not been verified.
+                  </p>
+                </div>
+              ) : (
+                <p className="pin-demo-note" id="pin-demo-note">
+                  UI demo only. Enter any 6-digit PIN to preview the shipping message; no live serviceability check is made.
+                </p>
+              )}
+            </section>
+
             <Button size="lg" className="full-button" disabled={!available} onClick={() => add()}>
               <ShoppingBag />
               ADD TO CART <ArrowRight />
@@ -247,3 +350,4 @@ export function ProductDetail({ product }: { product: Product }) {
     </>
   );
 }
+
