@@ -6,7 +6,7 @@ import { adminRoleAllowed, productInput, orderInput, supportInput, settingsInput
 import { checkTrackingNumber } from '@/lib/shipping/awb';
 import { amountFromDb } from '@/lib/store/orders';
 const requireAdmin = createMiddleware({ type: 'function' }).middleware([requireSupabaseAuth]).server(async ({ context, next }) => {
-  const { data, error } = await context.supabase.rpc('has_role', { _user_id: context.userId, _role: 'admin' });
+  const { data, error } = await context.supabase.rpc('is_admin');
   if (error || !adminRoleAllowed(data)) throw new Error('Admin access required');
   return next();
 });
@@ -16,7 +16,7 @@ const orderSaveMessages: Record<string, string> = {
   INVALID_STATUS_TRANSITION: 'That status change is not allowed. Orders move Processing → Shipped → Delivered; only orders that are not delivered can be cancelled.',
   ORDER_FIELDS_LOCKED: 'Only the status, tracking number and note can be changed.',
   ORDER_UPDATE_NOT_ALLOWED: 'Admin access required',
-  PAID_ORDER_WITHOUT_PAYMENT_RECORD: 'This order is marked paid but has no captured Razorpay payment on record, so it cannot be cancelled here. Check the payment in Razorpay first.',
+  PAID_ORDER_WITHOUT_PAYMENT_RECORD: 'This paid order has no payment record, so it cannot be cancelled here. Review the payment before changing its status.',
 };
 
 export const getAdminData = createServerFn({ method: 'POST' }).middleware([requireAdmin]).handler(async () => {
@@ -28,9 +28,8 @@ export const getAdminData = createServerFn({ method: 'POST' }).middleware([requi
     supabaseAdmin.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
     supabaseAdmin.from('profiles').select('id,name,email,created_at').order('created_at', { ascending: false }),
     supabaseAdmin.from('support_messages').select('*').order('created_at', { ascending: false }),
-    supabaseAdmin.from('store_settings').select('*').eq('id', 1).maybeSingle(),
+    supabaseAdmin.from('store_settings').select('*').eq('id', 1).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
     supabaseAdmin.from('product_variants').select('*'),
-    supabaseAdmin.from('payment_refunds').select('*').order('created_at', { ascending: false }),
     supabaseAdmin.from('product_reviews').select('id, product_id, rating, title, body, display_name, status, created_at').order('created_at', { ascending: false }).limit(200),
   ]);
   const queryNames = [
@@ -40,7 +39,6 @@ export const getAdminData = createServerFn({ method: 'POST' }).middleware([requi
     'support_messages',
     'store_settings',
     'product_variants',
-    'payment_refunds',
     'product_reviews',
   ] as const;
 
@@ -69,7 +67,7 @@ export const getAdminData = createServerFn({ method: 'POST' }).middleware([requi
       unit_cost: amountFromDb(i.unit_cost),
     })),
   }));
-  return { products: results[0].data ?? [], orders, users: results[2].data ?? [], messages: results[3].data ?? [], settings: results[4].data, variants: results[5].data ?? [], refunds: results[6].data ?? [], reviews: results[7].data ?? [] };
+  return { products: results[0].data ?? [], orders, users: results[2].data ?? [], messages: results[3].data ?? [], settings: results[4].data, variants: results[5].data ?? [], reviews: results[6].data ?? [] };
 });
 export const saveProduct = createServerFn({ method: 'POST' }).middleware([requireAdmin]).inputValidator(productInput).handler(async ({ data, context }) => {
   const { id, ...raw } = data;
@@ -113,7 +111,7 @@ export const saveSupport = createServerFn({ method: 'POST' }).middleware([requir
   return { ok: true };
 });
 export const saveSettings = createServerFn({ method: 'POST' }).middleware([requireAdmin]).inputValidator(settingsInput).handler(async ({ data, context }) => {
-  const result = await context.supabase.from('store_settings').upsert({ id: 1, ...data }).select('id').single();
+  const result = await context.supabase.from('store_settings').upsert({ id: 1, ...data, cod_enabled: true }).select('id').single();
   if (result.error) throw new Error('Settings could not be saved');
   return { ok: true };
 });
@@ -124,31 +122,6 @@ export const saveVariants = createServerFn({ method: 'POST' }).middleware([requi
   if (result.error) throw new Error('Sizes and stock could not be saved');
   return { ok: true };
 });
-
-// ---- Refunds (Razorpay). The refund code runs only on the server, after the admin check. ----
-const refundSafe = async <T>(work: () => Promise<T>): Promise<T> => {
-  const { RefundError } = await import('@/lib/payments/refunds.server');
-  try {
-    return await work();
-  } catch (error) {
-    if (error instanceof RefundError) throw new Error(error.message);
-    console.error('[Admin] Refund action failed:', error instanceof Error ? error.message : 'unknown');
-    throw new Error('The refund action failed. Please check the case and try again.');
-  }
-};
-const refundCase = z.object({ caseId: z.string().uuid() });
-export const refundViaRazorpay = createServerFn({ method: 'POST' }).middleware([requireAdmin]).validator(refundCase).handler(async ({ data, context }) =>
-  refundSafe(async () => (await import('@/lib/payments/refunds.server')).startRefund(data.caseId, context.userId)));
-export const checkRefundStatus = createServerFn({ method: 'POST' }).middleware([requireAdmin]).validator(refundCase).handler(async ({ data, context }) =>
-  refundSafe(async () => (await import('@/lib/payments/refunds.server')).checkRefund(data.caseId, context.userId)));
-export const recordRazorpayRefund = createServerFn({ method: 'POST' }).middleware([requireAdmin])
-  .validator(refundCase.extend({ refundId: z.string().trim().regex(/^rfnd_[A-Za-z0-9]+$/, 'Enter a Razorpay refund ID (rfnd_…)') }))
-  .handler(async ({ data, context }) =>
-    refundSafe(async () => (await import('@/lib/payments/refunds.server')).recordDashboardRefund(data.caseId, data.refundId, context.userId)));
-export const closeRefundManually = createServerFn({ method: 'POST' }).middleware([requireAdmin])
-  .validator(refundCase.extend({ note: z.string().trim().min(5).max(500) }))
-  .handler(async ({ data, context }) =>
-    refundSafe(async () => (await import('@/lib/payments/refunds.server')).resolveRefundManually(data.caseId, data.note, context.userId)));
 
 // ---- Product reviews: admins can hide or show a review (moderation). ----
 export const setReviewStatus = createServerFn({ method: 'POST' }).middleware([requireAdmin])

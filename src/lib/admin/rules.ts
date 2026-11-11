@@ -19,7 +19,7 @@ export const variantsInput = z.object({
 });
 export const orderInput = z.object({ id: z.string().uuid(), status: z.enum(['Processing','Shipped','Delivered','Cancelled']), tracking_number: z.string().max(150), admin_note: z.string().max(2000) });
 export const supportInput = z.object({ id: z.string().uuid(), status: z.enum(['open','resolved']) });
-export const settingsInput = z.object({ store_name: z.string().min(1).max(100), announcement: z.string().max(300), support_email: z.union([z.literal(''),z.string().email()]), free_shipping_threshold: z.number().int().nonnegative(), shipping_fee: z.number().int().nonnegative(), cod_enabled: z.boolean(), razorpay_enabled: z.boolean(),
+export const settingsInput = z.object({ store_name: z.string().min(1).max(100), announcement: z.string().max(300), support_email: z.union([z.literal(''),z.string().email()]), free_shipping_threshold: z.number().int().nonnegative(), shipping_fee: z.number().int().nonnegative(),
   categories: z.array(z.string().trim().min(1).max(60)).min(1).max(30),
   colours: z.array(z.object({ name: z.string().trim().min(1).max(40), hex: z.string().regex(/^#[0-9a-fA-F]{6}$/) })).min(1).max(40),
   sizes: z.array(z.string().trim().min(1).max(10)).min(1).max(20),

@@ -32,7 +32,7 @@ import {
   type Product,
 } from "./catalogue";
 
-export type PaymentChoice = "cod" | "razorpay";
+export type PaymentChoice = "cod";
 
 type Store = {
   cart: CartLine[];
@@ -59,8 +59,6 @@ type Store = {
   /** Empties the bag and refreshes stock and orders after a successful checkout. */
   completeCheckout: () => Promise<void>;
   cancel: (id: string) => Promise<void>;
-  /** Cancels an unpaid online order (e.g. payment window closed). Returns an error message or null. */
-  cancelUnpaid: (dbId: string) => Promise<string | null>;
   refreshOrders: () => Promise<void>;
   setProfile: (s: string) => void;
 };
@@ -387,11 +385,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await loadOrders();
   };
 
-  const cancelUnpaid = async (dbId: string) => {
-    const { error } = await supabase.rpc("cancel_order", { p_order: dbId });
-    await loadOrders();
-    return error ? orderErrorMessage(error) : null;
-  };
 
   return (
     <Context.Provider
@@ -441,7 +434,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           else toast.success("Order cancelled");
           await loadOrders();
         },
-        cancelUnpaid,
         refreshOrders: loadOrders,
         setProfile,
       }}

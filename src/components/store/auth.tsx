@@ -263,7 +263,7 @@ function useRedirectWhenSignedIn(next: string) {
       else if (required) navigate({ to: required, search: { next: target }, replace: true });
       else navigate({ to: target, replace: true });
     };
-    supabase.rpc("has_role", { _user_id: userId, _role: "admin" }).then(
+    supabase.rpc("is_admin").then(
       ({ data }) => go(data === true),
       () => go(false),
     );
@@ -740,7 +740,7 @@ export function ResetPasswordPage() {
       }
       toast.success("Password updated");
       const { data } = await supabase.auth.getUser();
-      const role = data.user ? await supabase.rpc("has_role", { _user_id: data.user.id, _role: "admin" }) : null;
+      const role = data.user ? await supabase.rpc("is_admin") : null;
       navigate({ to: role?.data === true ? "/admin" : "/account" });
     } catch (updateError) {
       toast.error(passwordUpdateFailure(updateError).message);

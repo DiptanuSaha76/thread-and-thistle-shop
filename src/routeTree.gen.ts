@@ -34,8 +34,6 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as CollectionsIndexRouteImport } from './routes/collections.index'
 import { Route as CollectionsSlugRouteImport } from './routes/collections.$slug'
 import { Route as ProductsSlugRouteImport } from './routes/products.$slug'
-import { Route as ApiCronExpireOrdersRouteImport } from './routes/api.cron.expire-orders'
-import { Route as ApiRazorpayWebhookRouteImport } from './routes/api.razorpay.webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -162,16 +160,6 @@ const ProductsSlugRoute = ProductsSlugRouteImport.update({
   path: '/products/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiCronExpireOrdersRoute = ApiCronExpireOrdersRouteImport.update({
-  id: '/api/cron/expire-orders',
-  path: '/api/cron/expire-orders',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiRazorpayWebhookRoute = ApiRazorpayWebhookRouteImport.update({
-  id: '/api/razorpay/webhook',
-  path: '/api/razorpay/webhook',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -199,8 +187,6 @@ export interface FileRoutesByFullPath {
   '/products/$slug': typeof ProductsSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/collections/': typeof CollectionsIndexRoute
-  '/api/cron/expire-orders': typeof ApiCronExpireOrdersRoute
-  '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -226,8 +212,6 @@ export interface FileRoutesByTo {
   '/products/$slug': typeof ProductsSlugRoute
   '/admin': typeof AdminIndexRoute
   '/collections': typeof CollectionsIndexRoute
-  '/api/cron/expire-orders': typeof ApiCronExpireOrdersRoute
-  '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -256,8 +240,6 @@ export interface FileRoutesById {
   '/products/$slug': typeof ProductsSlugRoute
   '/admin/': typeof AdminIndexRoute
   '/collections/': typeof CollectionsIndexRoute
-  '/api/cron/expire-orders': typeof ApiCronExpireOrdersRoute
-  '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -287,8 +269,6 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/admin/'
     | '/collections/'
-    | '/api/cron/expire-orders'
-    | '/api/razorpay/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -314,8 +294,6 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/admin'
     | '/collections'
-    | '/api/cron/expire-orders'
-    | '/api/razorpay/webhook'
   id:
     | '__root__'
     | '/'
@@ -343,8 +321,6 @@ export interface FileRouteTypes {
     | '/products/$slug'
     | '/admin/'
     | '/collections/'
-    | '/api/cron/expire-orders'
-    | '/api/razorpay/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -370,8 +346,6 @@ export interface RootRouteChildren {
   VerifyRoute: typeof VerifyRoute
   VerifyPhoneRoute: typeof VerifyPhoneRoute
   ProductsSlugRoute: typeof ProductsSlugRoute
-  ApiCronExpireOrdersRoute: typeof ApiCronExpireOrdersRoute
-  ApiRazorpayWebhookRoute: typeof ApiRazorpayWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -551,20 +525,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/cron/expire-orders': {
-      id: '/api/cron/expire-orders'
-      path: '/api/cron/expire-orders'
-      fullPath: '/api/cron/expire-orders'
-      preLoaderRoute: typeof ApiCronExpireOrdersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/razorpay/webhook': {
-      id: '/api/razorpay/webhook'
-      path: '/api/razorpay/webhook'
-      fullPath: '/api/razorpay/webhook'
-      preLoaderRoute: typeof ApiRazorpayWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -615,8 +575,6 @@ const rootRouteChildren: RootRouteChildren = {
   VerifyRoute: VerifyRoute,
   VerifyPhoneRoute: VerifyPhoneRoute,
   ProductsSlugRoute: ProductsSlugRoute,
-  ApiCronExpireOrdersRoute: ApiCronExpireOrdersRoute,
-  ApiRazorpayWebhookRoute: ApiRazorpayWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

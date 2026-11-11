@@ -1,17 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
-import {
-  ArrowRight,
-  Check,
-  ShieldCheck,
-  Smartphone,
-  CreditCard,
-  Landmark,
-  Wallet,
-  ArrowLeft,
-  ShoppingBag,
-} from "lucide-react";
+import { ArrowRight, Check, ShieldCheck, Wallet, ArrowLeft, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Summary, Benefits } from "./shared";
@@ -20,11 +9,8 @@ import { CheckoutError } from "@/lib/store/orders";
 import { totals, money, type Address, type Order } from "@/lib/store/catalogue";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, useCompleteProfileGate } from "@/lib/auth";
-import { confirmOnlinePayment, getPaymentOptions, startOnlinePayment } from "@/lib/payments/functions";
-import { payWithRazorpay } from "@/lib/payments/razorpay-checkout";
 
-type PaymentId = "upi" | "card" | "netbanking" | "cod";
-const onlineMethods: PaymentId[] = ["upi", "card", "netbanking"];
+type PaymentId = "cod";
 const newKey = () => crypto.randomUUID();
 /** Indian mobile as 10 digits (accepts +91 / 91 prefixes and spaces). */
 const tenDigits = (phone: string) => phone.replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
@@ -79,14 +65,10 @@ export function CheckoutPage() {
   const { user, ready: authReady } = useAuth();
   const navigate = useNavigate();
   const holdForProfile = useCompleteProfileGate("/checkout");
-  const fetchPaymentOptions = useServerFn(getPaymentOptions);
-  const startPayment = useServerFn(startOnlinePayment);
-  const confirmPayment = useServerFn(confirmOnlinePayment);
   const [address, setAddress] = useState<Address>(emptyAddress),
     [errors, setErrors] = useState<Partial<Address>>({}),
     [step, setStep] = useState(1),
     [payment, setPayment] = useState<PaymentId>("cod"),
-    [options, setOptions] = useState<{ cod: boolean; online: boolean } | null>(null),
     [save, setSave] = useState(false),
     [busy, setBusy] = useState(false),
     [placed, setPlaced] = useState<Order | null>(null);
@@ -100,24 +82,6 @@ export function CheckoutPage() {
     if (authReady && !user && !placed)
       navigate({ to: "/login", search: { next: "/checkout" }, replace: true });
   }, [authReady, user, placed, navigate]);
-
-  useEffect(() => {
-    let alive = true;
-    fetchPaymentOptions()
-      .then((result) => {
-        if (!alive) return;
-        setOptions(result);
-        if (!result.cod && result.online) setPayment("upi");
-      })
-      .catch((error) => {
-        console.error("[checkout] Payment options could not be loaded:", error);
-        // The database still checks the method when the order is placed.
-        if (alive) setOptions({ cod: true, online: false });
-      });
-    return () => {
-      alive = false;
-    };
-  }, [fetchPaymentOptions]);
 
   // Prefill: this tab's draft first, otherwise the customer's default saved address.
   useEffect(() => {
@@ -180,15 +144,8 @@ export function CheckoutPage() {
     setErrors(e);
     return Object.keys(e).length === 0;
   };
-  // Until the server answers, assume Cash on Delivery only; the database checks again at order time.
-  const isAvailable = (method: PaymentId) =>
-    onlineMethods.includes(method) ? !!options?.online : (options?.cod ?? true);
   const next = () => {
     if (step === 1 && !validate()) return;
-    if (step === 2 && !isAvailable(payment)) {
-      toast.error("That payment method isn't available right now. Please choose another one.");
-      return;
-    }
     setStep(Math.min(3, step + 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -239,17 +196,12 @@ export function CheckoutPage() {
       navigate({ to: "/login", search: { next: "/checkout" } });
       return;
     }
-    const online = onlineMethods.includes(payment);
-    if (options && (online ? !options.online : !options.cod)) {
-      toast.error("That payment method isn't available right now. Please choose another one.");
-      return;
-    }
     placing.current = true;
     setBusy(true);
     try {
       let order: Order;
       try {
-        order = await store.createOrder({ ...address }, online ? "razorpay" : "cod", attemptKey.current);
+        order = await store.createOrder({ ...address }, "cod", attemptKey.current);
       } catch (error) {
         if (error instanceof CheckoutError && error.code) {
           attemptKey.current = newKey(); // nothing was created; the next attempt is a new request
@@ -261,66 +213,7 @@ export function CheckoutPage() {
         toast.error(error instanceof Error ? error.message : "Your order could not be placed. Please try again.");
         return;
       }
-      if (!online) {
-        await finish(order);
-        return;
-      }
-
-      // Online payment: the server creates the Razorpay order for the database total.
-      const dbId = order.dbId ?? "";
-      let session;
-      try {
-        session = await startPayment({ data: { orderId: dbId } });
-      } catch (error) {
-        await store.cancelUnpaid(dbId);
-        attemptKey.current = newKey();
-        toast.error(error instanceof Error ? error.message : "Online payment isn't available right now.");
-        return;
-      }
-      const result = await payWithRazorpay({
-        ...session,
-        method: payment as Exclude<PaymentId, "cod">,
-        customer: { name: address.fullName, email: user.email ?? "", contact: `+91${tenDigits(address.phone)}` },
-      }).catch((error: unknown) => {
-        console.error("[checkout] Payment window failed:", error);
-        return "failed" as const;
-      });
-      if (result === null || result === "failed") {
-        const cancelError = await store.cancelUnpaid(dbId);
-        attemptKey.current = newKey();
-        if (cancelError) toast.error(cancelError);
-        else
-          toast(
-            result === null
-              ? "Payment was not completed, so your order was not placed. Your bag is unchanged."
-              : "The payment window could not open. Your order was not placed; please try again.",
-          );
-        return;
-      }
-      try {
-        const confirmation = await confirmPayment({
-          data: {
-            orderId: dbId,
-            razorpayOrderId: result.razorpay_order_id,
-            razorpayPaymentId: result.razorpay_payment_id,
-            razorpaySignature: result.razorpay_signature,
-          },
-        });
-        if (confirmation.status === "refund_needed") {
-          toast.error("Your payment arrived after the order expired. We will refund it; please contact us if you need help.");
-          await store.completeCheckout();
-          navigate({ to: "/orders" });
-          return;
-        }
-        if (confirmation.status === "processing")
-          toast("Payment received. We're confirming it with the bank; your order will update shortly.");
-        await finish(order);
-      } catch (error) {
-        // The payment may still be confirmed by the webhook, so the order is not cancelled.
-        toast.error(error instanceof Error ? error.message : "We couldn't confirm your payment yet.");
-        await store.completeCheckout();
-        navigate({ to: "/orders" });
-      }
+      await finish(order);
     } finally {
       placing.current = false;
       setBusy(false);
@@ -503,15 +396,10 @@ export function CheckoutPage() {
               <h1>Payment Method</h1>
               <p className="page-subtitle">Choose how you’d like to pay</p>
               <div className="payment-options">
-                {[
-                  ["upi", "UPI", "Pay using any UPI app", Smartphone],
-                  ["card", "Credit / Debit Card", "Visa, Mastercard, RuPay, etc.", CreditCard],
-                  ["netbanking", "Net Banking", "All major banks", Landmark],
-                  ["cod", "Cash on Delivery", "Pay at your doorstep", Wallet],
-                ].map(([id, label, desc, Icon]) => {
+                {[["cod", "Cash on Delivery", "Pay at your doorstep", Wallet]].map(([id, label, desc, Icon]) => {
                   const I = Icon as typeof Wallet;
                   const method = id as PaymentId;
-                  const unavailable = !isAvailable(method);
+                  const unavailable = false;
                   return (
                     <label
                       key={String(id)}
@@ -537,16 +425,8 @@ export function CheckoutPage() {
                 })}
               </div>
               <div className="payment-notice">
-                {!isAvailable(payment)
-                  ? "This payment method isn't available right now. Please choose another one."
-                  : payment === "upi"
-                    ? "UPI payment opens our secure payment window to complete the purchase."
-                    : payment === "card"
-                      ? "Card details are processed securely through our payment provider."
-                      : payment === "netbanking"
-                        ? "Bank selection and authorisation continue through the payment provider."
-                        : "Cash on Delivery selected."}
-                <p>Your order is reviewed before payment is confirmed.</p>
+                Cash on Delivery selected.
+                <p>Pay when your order arrives.</p>
               </div>
               <Button size="lg" className="full-button" onClick={next}>
                 REVIEW ORDER <ArrowRight />
@@ -573,14 +453,7 @@ export function CheckoutPage() {
               <div className="review-address">
                 <h3>Payment method</h3>
                 <p>
-                  {
-                    {
-                      upi: "UPI",
-                      card: "Credit / Debit Card",
-                      netbanking: "Net Banking",
-                      cod: "Cash on Delivery",
-                    }[payment as "upi" | "card" | "netbanking" | "cod"]
-                  }
+                  Cash on Delivery
                 </p>
                 <Button variant="link" onClick={() => setStep(2)}>
                   Change payment method
@@ -591,7 +464,7 @@ export function CheckoutPage() {
                 <ArrowRight />
               </Button>
               <p className="info-note">
-                Your payment is verified before the order is confirmed.
+                Pay when your order arrives.
               </p>
             </>
           )}

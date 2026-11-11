@@ -30,7 +30,7 @@ export function StoreShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return setIsAdmin(false);
     let live = true;
-    void supabase.rpc("has_role", { _user_id: user.id, _role: "admin" }).then(({ data }) => {
+    void supabase.rpc("is_admin").then(({ data }) => {
       if (live) setIsAdmin(data === true);
     });
     return () => {

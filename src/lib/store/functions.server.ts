@@ -106,7 +106,7 @@ export async function fetchPublicCatalogue(): Promise<PublicCatalogue> {
   const [productResult, variantResult, settingsResult] = await Promise.all([
     supabaseAdmin.from("products").select("*").eq("active", true).order("sort_order"),
     supabaseAdmin.from("product_variants").select("*"),
-    supabaseAdmin.from("store_settings").select("*").eq("id", 1).maybeSingle(),
+    supabaseAdmin.from("store_settings").select("*").eq("id", 1).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
 
   if (productResult.error || variantResult.error) {

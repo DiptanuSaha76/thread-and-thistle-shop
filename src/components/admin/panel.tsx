@@ -9,28 +9,13 @@ import { Modal } from '@/components/store/shared';
 import { assetByKey, colourImages, money, allFilters } from '@/lib/store/catalogue';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
-import { getAdminData, saveProduct, saveOrder, saveSupport, saveSettings, saveVariants, refundViaRazorpay, checkRefundStatus, recordRazorpayRefund, closeRefundManually, setReviewStatus } from '@/lib/admin/functions';
+import { getAdminData, saveProduct, saveOrder, saveSupport, saveSettings, saveVariants, setReviewStatus } from '@/lib/admin/functions';
 import type { Database } from '@/integrations/supabase/types';
 import { checkTrackingNumber } from '@/lib/shipping/awb';
 import { PRODUCT_IMAGE_BUCKET, PRODUCT_IMAGE_TYPES, productImagePath, productImageUrl } from '@/lib/admin/product-images';
 type Product = Database['public']['Tables']['products']['Row'];
 type VariantRow = Database['public']['Tables']['product_variants']['Row'];
 type Settings = Database['public']['Tables']['store_settings']['Row'];
-type Refund = Database['public']['Tables']['payment_refunds']['Row'];
-const refundStatusLabels: Record<string, string> = {
-  refund_required: 'Refund needed',
-  refund_requested: 'Refund requested, not yet confirmed by Razorpay',
-  refund_pending: 'Refund pending at Razorpay',
-  refunded: 'Refunded',
-  refund_failed: 'Refund failed',
-  resolved_manually: 'Refunded outside Razorpay',
-};
-const refundReasonLabels: Record<string, string> = {
-  order_cancelled_after_payment: 'Paid order was cancelled',
-  late_payment_after_cancel: 'Payment arrived after the order was cancelled or expired',
-  duplicate_payment: 'Second payment for an order already paid',
-};
-const refundOpen = (r: Refund) => r.status !== 'refunded' && r.status !== 'resolved_manually';
 type Colour = { name: string; hex: string };
 const sections = ['Dashboard', 'Products', 'Orders', 'Users', 'Support', 'Settings'] as const;
 const defaults = { categories: ['T-Shirts'], colours: [{ name: 'Black', hex: '#111111' }] as Colour[], sizes: ['S', 'M', 'L', 'XL', 'XXL'] };
@@ -43,7 +28,6 @@ export function AdminPanel() {
   const [editor, setEditor] = useState<Product | 'new' | null>(null);
   const queryClient = useQueryClient();
   const reviewSave = useServerFn(setReviewStatus);
-  const refundStart = useServerFn(refundViaRazorpay), refundCheck = useServerFn(checkRefundStatus), refundRecord = useServerFn(recordRazorpayRefund), refundClose = useServerFn(closeRefundManually);
   const fetchData = useServerFn(getAdminData), productSave = useServerFn(saveProduct), orderSave = useServerFn(saveOrder), messageSave = useServerFn(saveSupport), settingsSave = useServerFn(saveSettings), variantsSave = useServerFn(saveVariants);
   const query = useQuery({ queryKey: ['admin', user?.id], queryFn: () => fetchData(), enabled: ready && !!user, retry: false });
   const [saving, setSaving] = useState(false);
@@ -80,39 +64,11 @@ export function AdminPanel() {
         <Button variant="outline" size="icon" aria-label={`Edit ${product.name}`} title="Edit product" onClick={() => setEditor(product)}><Pencil/></Button>
       </div>; })}</div></>}
     {section === 'Orders' && <><h2>Orders ({data.orders.length})</h2>
-      {data.refunds.length > 0 && <RefundsPanel refunds={data.refunds} orders={data.orders} busy={saving}
-        onRefund={r => { if (window.confirm(`Refund ${money(r.amount / 100)} to the customer through Razorpay? This sends the full payment back.`)) void change(() => refundStart({ data: { caseId: r.id } })); }}
-        onCheck={r => void change(() => refundCheck({ data: { caseId: r.id } }))}
-        onRecord={(r, refundId) => change(() => refundRecord({ data: { caseId: r.id, refundId } }))}
-        onClose={(r, note) => change(() => refundClose({ data: { caseId: r.id, note } }))}/>}{!data.orders.length && <p>No orders yet.</p>}{data.orders.map(order => <form key={order.id} onSubmit={e => {e.preventDefault(); const f = new FormData(e.currentTarget); const tracking = String(f.get('tracking') ?? ''); const checked = checkTrackingNumber(tracking); const problem = !checked.ok && tracking !== (order.tracking_number ?? '') ? checked.message : ''; setTrackingErrors(prev => ({ ...prev, [order.id]: problem })); if (problem) { (e.currentTarget.elements.namedItem('tracking') as HTMLInputElement | null)?.focus(); return; } void change(() => orderSave({data:{id:order.id,status:f.get('status') as 'Processing',tracking_number:tracking,admin_note:String(f.get('note') ?? '')}}));}} className="border-b border-border py-6 space-y-3"><div className="flex flex-wrap justify-between gap-2"><h3>{order.order_number} · {order.ship_name}</h3><strong>{money(order.total)}</strong></div><p>{order.ship_address}, {order.ship_city}, {order.ship_state} {order.ship_pincode} · {order.ship_phone}</p><p>{order.payment_method} · {order.payment_status}</p>{data.refunds.filter(r => r.order_id === order.id).map(r => <p key={r.id} className={refundOpen(r) ? 'text-destructive' : 'text-muted-foreground'}>Refund: {refundStatusLabels[r.status] ?? r.status} · {money(r.amount / 100)}{r.provider_refund_id ? ` · ${r.provider_refund_id}` : ''}</p>)}{order.order_items.map(item => <p key={item.id}>{item.quantity} × {item.product_name} · {item.colour} / {item.size}</p>)}<div className="grid gap-3 sm:grid-cols-3"><label>Status<select name="status" className="field" defaultValue={order.status}>{['Processing','Shipped','Delivered','Cancelled'].map(s=><option key={s}>{s}</option>)}</select></label><label>Tracking number<input name="tracking" className="field" defaultValue={order.tracking_number ?? ''} placeholder="AWB from Shiprocket" aria-invalid={!!trackingErrors[order.id]} aria-describedby={trackingErrors[order.id] ? `tracking-error-${order.id}` : undefined} onChange={() => { if (trackingErrors[order.id]) setTrackingErrors(prev => ({ ...prev, [order.id]: '' })); }}/>{trackingErrors[order.id] && <p id={`tracking-error-${order.id}`} role="alert" className="text-sm text-destructive">{trackingErrors[order.id]}</p>}</label><label>Internal note<input name="note" className="field" defaultValue={order.admin_note ?? ''}/></label></div><Button type="submit" disabled={saving}><Save/>Save order</Button></form>)}</>}
+      {!data.orders.length && <p>No orders yet.</p>}{data.orders.map(order => <form key={order.id} onSubmit={e => {e.preventDefault(); const f = new FormData(e.currentTarget); const tracking = String(f.get('tracking') ?? ''); const checked = checkTrackingNumber(tracking); const problem = !checked.ok && tracking !== (order.tracking_number ?? '') ? checked.message : ''; setTrackingErrors(prev => ({ ...prev, [order.id]: problem })); if (problem) { (e.currentTarget.elements.namedItem('tracking') as HTMLInputElement | null)?.focus(); return; } void change(() => orderSave({data:{id:order.id,status:f.get('status') as 'Processing',tracking_number:tracking,admin_note:String(f.get('note') ?? '')}}));}} className="border-b border-border py-6 space-y-3"><div className="flex flex-wrap justify-between gap-2"><h3>{order.order_number} · {order.ship_name}</h3><strong>{money(order.total)}</strong></div><p>{order.ship_address}, {order.ship_city}, {order.ship_state} {order.ship_pincode} · {order.ship_phone}</p><p>{order.payment_method} · {order.payment_status}</p>{order.order_items.map(item => <p key={item.id}>{item.quantity} × {item.product_name} · {item.colour} / {item.size}</p>)}<div className="grid gap-3 sm:grid-cols-3"><label>Status<select name="status" className="field" defaultValue={order.status}>{['Processing','Shipped','Delivered','Cancelled'].map(s=><option key={s}>{s}</option>)}</select></label><label>Tracking number<input name="tracking" className="field" defaultValue={order.tracking_number ?? ''} placeholder="AWB from Shiprocket" aria-invalid={!!trackingErrors[order.id]} aria-describedby={trackingErrors[order.id] ? `tracking-error-${order.id}` : undefined} onChange={() => { if (trackingErrors[order.id]) setTrackingErrors(prev => ({ ...prev, [order.id]: '' })); }}/>{trackingErrors[order.id] && <p id={`tracking-error-${order.id}`} role="alert" className="text-sm text-destructive">{trackingErrors[order.id]}</p>}</label><label>Internal note<input name="note" className="field" defaultValue={order.admin_note ?? ''}/></label></div><Button type="submit" disabled={saving}><Save/>Save order</Button></form>)}</>}
     {section === 'Users' && <><h2>Customers ({data.users.length})</h2><div className="overflow-x-auto"><table className="w-full text-left"><thead><tr><th className="py-3">Name</th><th>Email</th><th>Joined</th></tr></thead><tbody>{data.users.map(person=><tr key={person.id} className="border-t border-border"><td className="py-3 pr-4">{person.name || '—'}</td><td className="pr-4">{person.email}</td><td>{new Date(person.created_at).toLocaleDateString()}</td></tr>)}</tbody></table></div>{!data.users.length && <p>No customers yet.</p>}</>}
     {section === 'Support' && <><h2>Support ({data.messages.length})</h2>{!data.messages.length && <p>No support messages yet.</p>}{data.messages.map(message=><article key={message.id} className="border-b border-border py-6 space-y-2"><h3>{message.topic} · {message.name}</h3><p className="text-muted-foreground">{message.email}</p><p className="whitespace-pre-wrap">{message.message}</p><label>Status<select className="field max-w-xs" value={message.status} disabled={saving} onChange={e=>void change(()=>messageSave({data:{id:message.id,status:e.target.value as 'open'|'resolved'}}))}><option value="open">Open</option><option value="resolved">Resolved</option></select></label></article>)}<h2 className="pt-6">Product reviews ({data.reviews.length})</h2>{!data.reviews.length && <p>No reviews yet.</p>}{data.reviews.map(review=><article key={review.id} className="border-b border-border py-4 space-y-1"><p className="flex flex-wrap justify-between gap-2"><b>{data.products.find(p=>p.id===review.product_id)?.name ?? 'Product'} · {review.rating}/5 · {review.display_name}</b><span className={review.status==='hidden' ? 'text-destructive' : 'text-muted-foreground'}>{review.status==='hidden' ? 'Hidden' : 'Published'}</span></p>{review.title && <p className="font-medium">{review.title}</p>}<p className="whitespace-pre-wrap">{review.body}</p><Button size="sm" variant="outline" disabled={saving} onClick={()=>void change(()=>reviewSave({data:{id:review.id,status:review.status==='hidden'?'published':'hidden'}}))}>{review.status==='hidden' ? 'Show review' : 'Hide review'}</Button></article>)}</>}
     {section === 'Settings' && <SettingsForm settings={data.settings} busy={saving} onSave={values=>change(()=>settingsSave({data:values}))}/>}
     <Modal open={editor !== null} onOpenChange={open=>{if(!open)setEditor(null);}} title={editor==='new'?'Add product':'Edit product'}>{editor && <ProductForm key={editor==='new'?'new':editor.id} product={editor==='new'?null:editor} settings={data.settings} existing={editor==='new'?[]:data.variants.filter(v=>v.product_id===editor.id)} busy={saving} onSave={async (values, variants)=>{ const ok = await change(async()=>{ const saved = await productSave({data:values}); await variantsSave({data:{product_id:saved.id,variants}}); }); if (ok) setEditor(null); }}/>}</Modal>
-  </section>;
-}
-
-function RefundsPanel({refunds,orders,busy,onRefund,onCheck,onRecord,onClose}:{refunds:Refund[];orders:{id:string;order_number:string}[];busy:boolean;onRefund:(r:Refund)=>void;onCheck:(r:Refund)=>void;onRecord:(r:Refund,refundId:string)=>Promise<boolean>;onClose:(r:Refund,note:string)=>Promise<boolean>}) {
-  const open = refunds.filter(refundOpen);
-  return <section className="space-y-4 border border-border p-4" aria-label="Refunds">
-    <h3>Refunds owed ({open.length})</h3>
-    {!open.length && <p className="text-muted-foreground">No refunds are waiting.</p>}
-    {refunds.map(r => <div key={r.id} className="space-y-2 border-t border-border pt-3">
-      <p className="flex flex-wrap justify-between gap-2"><b>{orders.find(o => o.id === r.order_id)?.order_number ?? 'Order'} · {money(r.amount / 100)}</b><span className={refundOpen(r) ? 'text-destructive' : 'text-muted-foreground'}>{refundStatusLabels[r.status] ?? r.status}</span></p>
-      <p className="text-sm text-muted-foreground">{refundReasonLabels[r.reason] ?? r.reason} · Payment {r.provider_payment_id}{r.provider_refund_id ? ` · Refund ${r.provider_refund_id}` : ''}{r.last_error ? ` · ${r.last_error}` : ''}{r.note ? ` · Note: ${r.note}` : ''}</p>
-      {refundOpen(r) && <div className="flex flex-wrap gap-2">
-        {(r.status === 'refund_required' || r.status === 'refund_requested') && <Button type="button" disabled={busy} onClick={() => onRefund(r)}>{r.status === 'refund_requested' ? 'Retry refund' : 'Refund via Razorpay'}</Button>}
-        {(r.status === 'refund_requested' || r.status === 'refund_pending') && <Button type="button" variant="outline" disabled={busy} onClick={() => onCheck(r)}>Check status</Button>}
-      </div>}
-      {refundOpen(r) && r.status !== 'refund_pending' && <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); const f = e.currentTarget; const id = String(new FormData(f).get('refund') ?? '').trim(); void onRecord(r, id).then(ok => { if (ok) f.reset(); }); }}>
-        <input name="refund" className="field max-w-xs" placeholder="rfnd_… (refund made in Razorpay)" aria-label="Razorpay refund ID" pattern="rfnd_[A-Za-z0-9]+" required/>
-        <Button type="submit" variant="outline" disabled={busy}>Record refund ID</Button>
-      </form>}
-      {(r.status === 'refund_required' || r.status === 'refund_failed') && <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); const f = e.currentTarget; const note = String(new FormData(f).get('note') ?? '').trim(); void onClose(r, note).then(ok => { if (ok) f.reset(); }); }}>
-        <input name="note" className="field max-w-md" placeholder="How was the customer refunded? (e.g. bank transfer, reference)" aria-label="Refund note" minLength={5} maxLength={500} required/>
-        <Button type="submit" variant="outline" disabled={busy}>Mark refunded outside Razorpay</Button>
-      </form>}
-    </div>)}
   </section>;
 }
 
@@ -177,10 +133,9 @@ function SettingsForm({settings,busy,onSave}:{settings:Settings|null;busy:boolea
   const [sizes, setSizes] = useState(settings?.sizes ?? defaults.sizes);
   const [colours, setColours] = useState<Colour[]>(shopColours(settings));
   const [filters, setFilters] = useState<string[]>(settings?.filters ?? ['Category','Size','Color','Price']);
-  return <form className="max-w-2xl space-y-6" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void onSave({store_name:String(f.get('store_name')),announcement:String(f.get('announcement')),support_email:String(f.get('support_email')),free_shipping_threshold:Number(f.get('free_shipping_threshold')),shipping_fee:Number(f.get('shipping_fee')),cod_enabled:f.get('cod_enabled')==='on',razorpay_enabled:f.get('razorpay_enabled')==='on',categories:categories.map(c=>c.trim()).filter(Boolean),sizes:sizes.map(s=>s.trim()).filter(Boolean),colours:colours.filter(c=>c.name.trim()),price_min:Number(f.get('price_min')),price_max:Number(f.get('price_max')),filters:filters as ('Category')[]});}}>
+  return <form className="max-w-2xl space-y-6" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);void onSave({store_name:String(f.get('store_name')),announcement:String(f.get('announcement')),support_email:String(f.get('support_email')),free_shipping_threshold:Number(f.get('free_shipping_threshold')),shipping_fee:Number(f.get('shipping_fee')),categories:categories.map(c=>c.trim()).filter(Boolean),sizes:sizes.map(s=>s.trim()).filter(Boolean),colours:colours.filter(c=>c.name.trim()),price_min:Number(f.get('price_min')),price_max:Number(f.get('price_max')),filters:filters as ('Category')[]});}}>
     <h2>Store settings</h2>
     {[['store_name','Store name',settings?.store_name??'THE YEARTH STORE'],['announcement','Announcement',settings?.announcement??''],['support_email','Support email',settings?.support_email??''],['free_shipping_threshold','Free shipping above (₹)',settings?.free_shipping_threshold??999],['shipping_fee','Shipping fee (₹)',settings?.shipping_fee??79]].map(([name,label,value])=><label key={name} className="block">{label}<input name={String(name)} className="field" type={name==='support_email'?'email':typeof value==='number'?'number':'text'} min="0" defaultValue={value}/></label>)}
-    {[['cod_enabled','Cash on delivery',settings?.cod_enabled??true],['razorpay_enabled','Online payments',settings?.razorpay_enabled??false]].map(([name,label,value])=><label key={String(name)} className="flex items-center gap-2"><input type="checkbox" name={String(name)} defaultChecked={Boolean(value)}/>{label}</label>)}
     <h2>Shop page</h2>
     <ListEditor label="Categories" items={categories} onChange={setCategories}/>
     <ListEditor label="Sizes" items={sizes} onChange={setSizes}/>

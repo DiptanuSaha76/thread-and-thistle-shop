@@ -1,12 +1,12 @@
 # Backend setup and go-live checklist
 
-This store uses Supabase (database + Auth) and optional Razorpay payments. The code
+This store uses Supabase (database + Auth) and Cash on Delivery. The code
 in this repository is ready, but several things live outside the code and must be
 configured by the project owner. Nothing below should be skipped before taking real
 orders.
 
 > Never paste keys or passwords into chats, tickets or commits. Put them only in the
-> Supabase dashboard, the Razorpay dashboard and your hosting provider's environment
+> Supabase dashboard and your hosting provider's environment
 > variables.
 
 ## 0. Before you start
@@ -52,7 +52,7 @@ pending file, including this one, so do not run `db push` before that point.
 | `20261028090500_retire_legacy_order_functions.sql` | Removes browser access to the old `place_order`, `cancel_my_order` and `validate_promo` functions (if they exist). Applied in its normal place in the sequence |
 | `20261028090600_phone_verification.sql` | Mobile number verification by SMS code (section 6a) |
 | `20261028090700_shipment_tracking.sql` | Private cache for Shiprocket tracking (section 6b) |
-| `20261028090800_payment_refunds.sql` | Refund tracking for Razorpay payments (section 6, step 7). Replaces `mark_order_paid()` from `...090300` |
+| `20261028090800_payment_refunds.sql` | Legacy refund tracking. Replaces `mark_order_paid()` from `...090300` |
 | `20261028090900_wishlist_reviews_support.sql` | Wishlist clean-up, product reviews, contact form storage and limits (section 8a) |
 | `20261028091000_product_images_storage.sql` | Only admins can upload/replace/delete product images (section 8b) |
 | `20261028091100_order_status_timestamps.sql` | Records the real time an order is marked Shipped / Delivered for the My Orders timeline (needs the matching website code). Gives customers read access to the two new columns. Older orders show "Date not recorded" |
@@ -92,7 +92,7 @@ applied is not:
 
 - **`20261028090300_orders_checkout_payments.sql` must not be re-run on its own** after
   later files. It would put back its original `mark_order_paid()` (so late or duplicate
-  Razorpay payments would no longer be recorded as refunds owed, see `...090800`) and
+  payment records would no longer be recorded as refunds owed, see `...090800`) and
   reset what customers may read on orders (so My Orders, which reads `shipped_at` /
   `delivered_at` from `...091100`, would fail to load).
 - If that happened by mistake, re-apply every file from `20261028090300_...` to the newest
@@ -185,39 +185,7 @@ Requires a paid Apple Developer Program membership.
 4. Apple may share a private relay email (`…@privaterelay.appleid.com`); this is
    allowed. Apple may not share the name; the customer is asked for it.
 
-## 6. Online payments (Razorpay) - optional
-
-Until configured, checkout offers Cash on Delivery only and online methods show
-"Not available yet". No order is ever marked paid without server-side verification.
-
-1. Razorpay Dashboard: create API keys (start with **Test mode**). Make sure payments
-   are **captured automatically** (Payment capture settings); orders are marked paid
-   only once a payment is *captured*.
-2. Hosting environment variables (server only, never `VITE_`):
-   `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
-3. Razorpay → Webhooks → add `https://<your-domain>/api/razorpay/webhook` with a secret
-   (the same value as `RAZORPAY_WEBHOOK_SECRET`) and the events `payment.captured`,
-   `order.paid`, `payment.failed`.
-4. Admin panel → Settings → enable **Online payments**.
-5. Schedule the expiry job (releases stock from abandoned unpaid online orders) every
-   15-30 minutes: `POST https://<your-domain>/api/cron/expire-orders` with header
-   `Authorization: Bearer <CRON_SECRET>` (any scheduler: cron-job.org, GitHub Actions,
-   or Supabase `pg_cron` + `pg_net`).
-6. Test with Razorpay test cards/UPI, then switch to live keys.
-7. Refunds. Customers cannot cancel orders that are already paid. When money has to go
-   back - an admin cancels a paid order, a payment arrives after its order was cancelled
-   or expired, or a second payment arrives for a paid order - it appears in
-   **Admin -> Orders -> Refunds owed**. Nothing is refunded automatically. For each case:
-   - **Refund via Razorpay** sends a full refund. It first checks Razorpay for an earlier
-     refund and uses Razorpay's idempotency key, so pressing it again (e.g. after a
-     timeout) cannot refund twice.
-   - **Check status** refreshes a pending refund.
-   - **Record refund ID** - if you refunded in the Razorpay dashboard, paste the
-     `rfnd_...` ID; it is checked with Razorpay (same payment, full amount).
-   - **Mark refunded outside Razorpay** closes a case with a note (e.g. bank transfer).
-   Try a refund with **Test mode** keys first. Partial refunds are not tracked here.
-
-## 6a. Mobile number verification by SMS (OneAPI) - required
+## 6. Mobile number verification by SMS (OneAPI) - required
 
 **Required for sign-up.** Customers sign up with first name, last name, email, password
 and an Indian (+91) mobile number, are signed in, and must enter the SMS code before they
@@ -284,7 +252,7 @@ number) and asks the customer to use the courier's website.
 
 See `.env.example`. Public: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`.
 Server only: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
-`RAZORPAY_*`, `CRON_SECRET`, `ONEAPI_SMS_*`, `PHONE_OTP_SECRET`, `SHIPROCKET_*`. The service-role key bypasses all database security rules;
+`ONEAPI_SMS_*`, `PHONE_OTP_SECRET`, `SHIPROCKET_*`. The service-role key bypasses all database security rules;
 keep it out of `VITE_` variables, browser code, logs and commits.
 
 ## 8a. Wishlist, reviews and contact form
