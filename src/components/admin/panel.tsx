@@ -9,15 +9,16 @@ import { Modal } from '@/components/store/shared';
 import { assetByKey, colourImages, money, allFilters } from '@/lib/store/catalogue';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
-import { getAdminData, saveProduct, saveOrder, saveSupport, saveSettings, saveVariants, setReviewStatus } from '@/lib/admin/functions';
+import { getAdminData, saveProduct, saveSupport, saveSettings, saveVariants, setReviewStatus } from '@/lib/admin/functions';
 import type { Database } from '@/integrations/supabase/types';
-import { checkTrackingNumber } from '@/lib/shipping/awb';
+import { ShiprocketNdrPanel } from '@/components/admin/ShiprocketNdrPanel';
+import { AdminOrders } from '@/components/admin/AdminOrders';
 import { PRODUCT_IMAGE_BUCKET, PRODUCT_IMAGE_TYPES, productImagePath, productImageUrl } from '@/lib/admin/product-images';
 type Product = Database['public']['Tables']['products']['Row'];
 type VariantRow = Database['public']['Tables']['product_variants']['Row'];
 type Settings = Database['public']['Tables']['store_settings']['Row'];
 type Colour = { name: string; hex: string };
-const sections = ['Dashboard', 'Products', 'Orders', 'Users', 'Support', 'Settings'] as const;
+const sections = ['Dashboard', 'Products', 'Orders', 'Shipping / NDR', 'Users', 'Support', 'Settings'] as const;
 const defaults = { categories: ['T-Shirts'], colours: [{ name: 'Black', hex: '#111111' }] as Colour[], sizes: ['S', 'M', 'L', 'XL', 'XXL'] };
 const shopColours = (s: Settings | null) => (Array.isArray(s?.colours) ? (s.colours as Colour[]) : defaults.colours);
 const thumb = (p: Product) => p.image_url || p.images?.[0] || (p.image_key && assetByKey[p.image_key]) || colourImages[p.primary_colour];
@@ -28,10 +29,9 @@ export function AdminPanel() {
   const [editor, setEditor] = useState<Product | 'new' | null>(null);
   const queryClient = useQueryClient();
   const reviewSave = useServerFn(setReviewStatus);
-  const fetchData = useServerFn(getAdminData), productSave = useServerFn(saveProduct), orderSave = useServerFn(saveOrder), messageSave = useServerFn(saveSupport), settingsSave = useServerFn(saveSettings), variantsSave = useServerFn(saveVariants);
-  const query = useQuery({ queryKey: ['admin', user?.id], queryFn: () => fetchData(), enabled: ready && !!user, retry: false });
+  const fetchData = useServerFn(getAdminData), productSave = useServerFn(saveProduct), messageSave = useServerFn(saveSupport), settingsSave = useServerFn(saveSettings), variantsSave = useServerFn(saveVariants);
+  const query = useQuery({ queryKey: ['admin', user?.id], queryFn: () => fetchData(), enabled: ready && !!user, retry: false, refetchInterval: section === 'Orders' ? 30_000 : false });
   const [saving, setSaving] = useState(false);
-  const [trackingErrors, setTrackingErrors] = useState<Record<string, string>>({});
   async function change(action: () => Promise<unknown>) {
     setSaving(true);
     try { await action(); await queryClient.invalidateQueries({ queryKey: ['admin'] }); toast.success('Saved'); return true; }
@@ -63,8 +63,8 @@ export function AdminPanel() {
         <div className="min-w-0 flex-1"><h3>{product.name}</h3><p className="text-muted-foreground">{money(product.price)} · {product.category} · {product.active ? 'Active' : 'Hidden'} · {vs.reduce((n, v) => n + v.stock, 0)} in stock</p></div>
         <Button variant="outline" size="icon" aria-label={`Edit ${product.name}`} title="Edit product" onClick={() => setEditor(product)}><Pencil/></Button>
       </div>; })}</div></>}
-    {section === 'Orders' && <><h2>Orders ({data.orders.length})</h2>
-      {!data.orders.length && <p>No orders yet.</p>}{data.orders.map(order => <form key={order.id} onSubmit={e => {e.preventDefault(); const f = new FormData(e.currentTarget); const tracking = String(f.get('tracking') ?? ''); const checked = checkTrackingNumber(tracking); const problem = !checked.ok && tracking !== (order.tracking_number ?? '') ? checked.message : ''; setTrackingErrors(prev => ({ ...prev, [order.id]: problem })); if (problem) { (e.currentTarget.elements.namedItem('tracking') as HTMLInputElement | null)?.focus(); return; } void change(() => orderSave({data:{id:order.id,status:f.get('status') as 'Processing',tracking_number:tracking,admin_note:String(f.get('note') ?? '')}}));}} className="border-b border-border py-6 space-y-3"><div className="flex flex-wrap justify-between gap-2"><h3>{order.order_number} · {order.ship_name}</h3><strong>{money(order.total)}</strong></div><p>{order.ship_address}, {order.ship_city}, {order.ship_state} {order.ship_pincode} · {order.ship_phone}</p><p>{order.payment_method} · {order.payment_status}</p>{order.order_items.map(item => <p key={item.id}>{item.quantity} × {item.product_name} · {item.colour} / {item.size}</p>)}<div className="grid gap-3 sm:grid-cols-3"><label>Status<select name="status" className="field" defaultValue={order.status}>{['Processing','Shipped','Delivered','Cancelled'].map(s=><option key={s}>{s}</option>)}</select></label><label>Tracking number<input name="tracking" className="field" defaultValue={order.tracking_number ?? ''} placeholder="AWB from Shiprocket" aria-invalid={!!trackingErrors[order.id]} aria-describedby={trackingErrors[order.id] ? `tracking-error-${order.id}` : undefined} onChange={() => { if (trackingErrors[order.id]) setTrackingErrors(prev => ({ ...prev, [order.id]: '' })); }}/>{trackingErrors[order.id] && <p id={`tracking-error-${order.id}`} role="alert" className="text-sm text-destructive">{trackingErrors[order.id]}</p>}</label><label>Internal note<input name="note" className="field" defaultValue={order.admin_note ?? ''}/></label></div><Button type="submit" disabled={saving}><Save/>Save order</Button></form>)}</>}
+    {section === 'Orders' && <AdminOrders orders={data.orders} fulfilments={data.fulfilments} />}
+    {section === 'Shipping / NDR' && <ShiprocketNdrPanel />}
     {section === 'Users' && <><h2>Customers ({data.users.length})</h2><div className="overflow-x-auto"><table className="w-full text-left"><thead><tr><th className="py-3">Name</th><th>Email</th><th>Joined</th></tr></thead><tbody>{data.users.map(person=><tr key={person.id} className="border-t border-border"><td className="py-3 pr-4">{person.name || '—'}</td><td className="pr-4">{person.email}</td><td>{new Date(person.created_at).toLocaleDateString()}</td></tr>)}</tbody></table></div>{!data.users.length && <p>No customers yet.</p>}</>}
     {section === 'Support' && <><h2>Support ({data.messages.length})</h2>{!data.messages.length && <p>No support messages yet.</p>}{data.messages.map(message=><article key={message.id} className="border-b border-border py-6 space-y-2"><h3>{message.topic} · {message.name}</h3><p className="text-muted-foreground">{message.email}</p><p className="whitespace-pre-wrap">{message.message}</p><label>Status<select className="field max-w-xs" value={message.status} disabled={saving} onChange={e=>void change(()=>messageSave({data:{id:message.id,status:e.target.value as 'open'|'resolved'}}))}><option value="open">Open</option><option value="resolved">Resolved</option></select></label></article>)}<h2 className="pt-6">Product reviews ({data.reviews.length})</h2>{!data.reviews.length && <p>No reviews yet.</p>}{data.reviews.map(review=><article key={review.id} className="border-b border-border py-4 space-y-1"><p className="flex flex-wrap justify-between gap-2"><b>{data.products.find(p=>p.id===review.product_id)?.name ?? 'Product'} · {review.rating}/5 · {review.display_name}</b><span className={review.status==='hidden' ? 'text-destructive' : 'text-muted-foreground'}>{review.status==='hidden' ? 'Hidden' : 'Published'}</span></p>{review.title && <p className="font-medium">{review.title}</p>}<p className="whitespace-pre-wrap">{review.body}</p><Button size="sm" variant="outline" disabled={saving} onClick={()=>void change(()=>reviewSave({data:{id:review.id,status:review.status==='hidden'?'published':'hidden'}}))}>{review.status==='hidden' ? 'Show review' : 'Hide review'}</Button></article>)}</>}
     {section === 'Settings' && <SettingsForm settings={data.settings} busy={saving} onSave={values=>change(()=>settingsSave({data:values}))}/>}
@@ -101,12 +101,23 @@ function ProductForm({product,settings,existing,busy,onSave}:{product:Product|nu
     const variants: VariantInput[] = [];
     const keys = new Set([...existing.map(v=>`${v.colour}|${v.size}`), ...picked.flatMap(c=>pickedSizes.map(s=>`${c}|${s}`))]);
     for (const key of keys) { const [colour='', size=''] = key.split('|'); const active = picked.includes(colour) && pickedSizes.includes(size); variants.push({ colour, size, colour_hex: palette.find(c=>c.name===colour)?.hex ?? existing.find(v=>v.colour===colour)?.colour_hex ?? '#000000', stock: active ? Math.max(0, Math.floor(stock[key] ?? 0)) : 0 }); }
-    void onSave({id:product?.id,name:String(f.get('name')),slug:String(f.get('slug')).trim().toLowerCase(),price:Number(f.get('price')),compare_at_price:compare>0?compare:null,cost_price:Number(f.get('cost')||0),badge:String(f.get('badge')||'')||null,description:String(f.get('description')),category:String(f.get('category')),primary_colour:String(f.get('colour')),active:f.get('active')==='on',image_key:product?.image_key ?? null,image_url:images[0] ?? null,images}, variants);
+    const optionalMeasure = (key: string) => { const value = String(f.get(key) ?? '').trim(); return value ? Number(value) : null; };
+    void onSave({id:product?.id,name:String(f.get('name')),slug:String(f.get('slug')).trim().toLowerCase(),price:Number(f.get('price')),compare_at_price:compare>0?compare:null,cost_price:Number(f.get('cost')||0),badge:String(f.get('badge')||'')||null,description:String(f.get('description')),category:String(f.get('category')),primary_colour:String(f.get('colour')),active:f.get('active')==='on',image_key:product?.image_key ?? null,image_url:images[0] ?? null,images,shipping_weight_kg:optionalMeasure('shipping_weight_kg'),shipping_length_cm:optionalMeasure('shipping_length_cm'),shipping_breadth_cm:optionalMeasure('shipping_breadth_cm'),shipping_height_cm:optionalMeasure('shipping_height_cm')}, variants);
   }
   return <form onSubmit={submit} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
     <div className="grid gap-3 sm:grid-cols-2">{[['name','Name',product?.name??'','text'],['slug','Link name (e.g. black-tee)',product?.slug??'','text'],['price','Price (₹)',product?.price??'','number'],['compare','Original price (optional, shows sale)',product?.compare_at_price??'','number'],['cost','Cost price (₹, for profit)',product?.cost_price??0,'number'],['badge','Badge (optional)',product?.badge??'','text']].map(([name,label,value,type])=><label key={name} className="block">{label}<input className="field" name={String(name)} defaultValue={value} type={String(type)} min="0" required={['name','slug','price'].includes(String(name))}/></label>)}
       <label className="block">Category<select className="field" name="category" defaultValue={product?.category ?? settings?.categories?.[0]}>{[...new Set([...(settings?.categories ?? defaults.categories), ...(product ? [product.category] : [])])].map(c=><option key={c}>{c}</option>)}</select></label>
       <label className="block">Main colour<select className="field" name="colour" defaultValue={product?.primary_colour ?? palette[0]?.name}>{palette.map(c=><option key={c.name}>{c.name}</option>)}</select></label></div>
+    <fieldset className="space-y-3 rounded-lg border border-border p-3">
+      <legend className="px-1 font-semibold">Shipping specs — per individually packed unit</legend>
+      <p className="text-sm text-muted-foreground">Enter measured shipping weight and dimensions for one product unit. These values are used for checkout PIN-code rate estimates. The admin will enter the actual outer parcel measurements again for each order before a Shiprocket shipment is created.</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">Unit packed weight (kg)<input className="field" name="shipping_weight_kg" type="number" min="0.001" max="30" step="0.001" defaultValue={product?.shipping_weight_kg ?? ''} placeholder="e.g. 0.320"/></label>
+        <label className="block">Unit package length (cm)<input className="field" name="shipping_length_cm" type="number" min="0.1" max="200" step="0.1" defaultValue={product?.shipping_length_cm ?? ''} placeholder="e.g. 30"/></label>
+        <label className="block">Unit package breadth (cm)<input className="field" name="shipping_breadth_cm" type="number" min="0.1" max="200" step="0.1" defaultValue={product?.shipping_breadth_cm ?? ''} placeholder="e.g. 25"/></label>
+        <label className="block">Unit package height (cm)<input className="field" name="shipping_height_cm" type="number" min="0.1" max="200" step="0.1" defaultValue={product?.shipping_height_cm ?? ''} placeholder="e.g. 3"/></label>
+      </div>
+    </fieldset>
     <label className="block">Description<textarea className="field" name="description" defaultValue={product?.description}/></label>
     <fieldset className="space-y-2"><legend className="font-semibold">Images</legend>
       <div className="flex flex-wrap gap-2">{images.map((src,i)=><div key={src} className="relative"><img src={src} alt={`Product image ${i+1}`} className="h-24 w-20 object-cover border border-border"/><Button type="button" size="icon" variant="outline" className="absolute right-0 top-0 h-7 w-7" aria-label="Remove image" onClick={()=>setImages(images.filter(x=>x!==src))}><Trash2/></Button></div>)}</div>

@@ -5,9 +5,10 @@
  *    its user_id must match the signed-in user, before anything is returned.
  * 2. The AWB is the order's tracking number, which only an admin can set.
  * 3. Shiprocket is asked at most once per order every 30 minutes (5 minutes
- *    after a failure); results are cached in public.order_shipments.
- * 4. Shiprocket's status text is shown as-is. Order status is never changed
- *    here, and returned/lost/damaged shipments are not interpreted.
+ *    after a failure); results are cached in public.order_shipments. The Shiprocket
+ *    webhook can refresh this same cache immediately between customer polls.
+ * 4. This customer read path never changes order status. The trusted webhook
+ *    processor handles safe forward-only status synchronization separately.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -58,8 +59,6 @@ type Deps = {
   tracker: { trackAwb: (awb: string) => Promise<TrackingSnapshot> } | null;
   now?: () => number;
 };
-
-const SHIPPED = new Set(["Shipped", "Delivered"]);
 
 function eventsFrom(value: Json): TrackingEvent[] {
   if (!Array.isArray(value)) return [];
@@ -113,7 +112,7 @@ export async function getOrderTracking(
   if (!order || order.user_id !== userId) throw new TrackingError("We couldn't find that order.");
 
   const awb = order.tracking_number?.trim() ?? "";
-  if (!awb || !SHIPPED.has(order.status)) return { state: "not_shipped" };
+  if (!awb || order.status === "Cancelled") return { state: "not_shipped" };
   if (!deps.tracker || !isTrackableAwb(awb)) return { state: "manual", awb };
 
   const cached = await deps.adminDb

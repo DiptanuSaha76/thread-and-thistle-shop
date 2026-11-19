@@ -12,6 +12,10 @@ export const productInput = z.object({
   compare_at_price: z.number().int().nonnegative().nullable().optional(),
   cost_price: z.number().int().nonnegative().optional(),
   badge: z.string().max(40).nullable().optional(),
+  shipping_weight_kg: z.number().positive().max(30).nullable().optional(),
+  shipping_length_cm: z.number().positive().max(200).nullable().optional(),
+  shipping_breadth_cm: z.number().positive().max(200).nullable().optional(),
+  shipping_height_cm: z.number().positive().max(200).nullable().optional(),
 });
 export const variantsInput = z.object({
   product_id: z.string().uuid(),

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Check, ShieldCheck, Wallet, ArrowLeft, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { toast } from "sonner";
 import { Summary, Benefits } from "./shared";
 import { useStore } from "@/lib/store/state";
 import { CheckoutError } from "@/lib/store/orders";
+import { checkShippingServiceability } from "@/lib/shipping/functions";
 import { totals, money, type Address, type Order } from "@/lib/store/catalogue";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, useCompleteProfileGate } from "@/lib/auth";
@@ -71,7 +73,16 @@ export function CheckoutPage() {
     [payment, setPayment] = useState<PaymentId>("cod"),
     [save, setSave] = useState(false),
     [busy, setBusy] = useState(false),
-    [placed, setPlaced] = useState<Order | null>(null);
+    [placed, setPlaced] = useState<Order | null>(null),
+    [checkingPincode, setCheckingPincode] = useState(false),
+    [pinQuotes, setPinQuotes] = useState<{
+      pickupPincode: string;
+      deliveryPincode: string;
+      weightKg: number;
+      couriers: Array<{ courierId: number; courierName: string; rate: number | null; estimatedDays: string | null; etd: string | null; codAvailable: boolean }>;
+    } | null>(null),
+    [pinError, setPinError] = useState("");
+  const checkServiceability = useServerFn(checkShippingServiceability);
   // One key per checkout attempt: a retried request returns the same order instead of a duplicate.
   const attemptKey = useRef(newKey());
   const placing = useRef(false);
@@ -128,10 +139,41 @@ export function CheckoutPage() {
     const next = { ...address, [key]: value };
     setAddress(next);
     setErrors((prev) => ({ ...prev, [key]: undefined }));
+    if (key === "pincode") {
+      setPinQuotes(null);
+      setPinError("");
+    }
     try {
       sessionStorage.setItem("yearth-checkout", JSON.stringify(next));
     } catch {}
   };
+  const checkPincode = async () => {
+    if (!/^[1-9]\d{5}$/.test(address.pincode)) {
+      setPinError("Enter a valid six-digit delivery PIN code first.");
+      setPinQuotes(null);
+      return;
+    }
+    setCheckingPincode(true);
+    setPinError("");
+    setPinQuotes(null);
+    try {
+      const result = await checkServiceability({
+        data: {
+          deliveryPincode: address.pincode,
+          cod: payment === "cod",
+          items: store.cart.map((line) => ({ productId: line.productId, quantity: line.quantity })),
+          declaredValue: t.total,
+        },
+      });
+      setPinQuotes(result);
+      if (!result.couriers.length) setPinError("No Shiprocket courier is currently available for this PIN code and parcel profile.");
+    } catch (error) {
+      setPinError(error instanceof Error ? error.message : "Delivery availability could not be checked.");
+    } finally {
+      setCheckingPincode(false);
+    }
+  };
+
   const validate = () => {
     const e: Partial<Address> = {};
     Object.keys(address).forEach((key) => {
@@ -378,6 +420,30 @@ export function CheckoutPage() {
                     </div>
                   ),
                 )}
+                <div className="form-wide rounded-lg border border-border p-4 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <b>Check delivery availability</b>
+                      <p className="text-sm text-muted-foreground">Pickup from PIN {pinQuotes?.pickupPincode ?? "799120"}. Check serviceability before continuing.</p>
+                    </div>
+                    <Button type="button" variant="outline" disabled={checkingPincode} onClick={() => void checkPincode()}>
+                      {checkingPincode ? "CHECKING…" : "CHECK PINCODE"}
+                    </Button>
+                  </div>
+                  {pinError && <p className="field-error" role="status">{pinError}</p>}
+                  {pinQuotes?.couriers.length ? (
+                    <div className="space-y-1" aria-live="polite">
+                      <p className="text-sm font-medium">Delivery is serviceable. Available courier quotes:</p>
+                      {pinQuotes.couriers.slice(0, 3).map((courier) => (
+                        <div key={courier.courierId} className="flex flex-wrap justify-between gap-2 text-sm">
+                          <span>{courier.courierName}{courier.estimatedDays ? ` · ${courier.estimatedDays} days` : ""}</span>
+                          <b>{courier.rate === null ? "Rate unavailable" : `₹${courier.rate.toFixed(2)}`}</b>
+                        </div>
+                      ))}
+                      <p className="text-xs text-muted-foreground">Rates are estimates from Shiprocket. The checkout shipping fee continues to follow your existing store settings.</p>
+                    </div>
+                  ) : null}
+                </div>
                 <label className="check-row form-wide">
                   <input
                     type="checkbox"

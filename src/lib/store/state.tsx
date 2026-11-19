@@ -5,6 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/lib/auth";
 import { getPublicCatalogue } from "./functions";
+import { getCustomerShipmentStatuses } from "@/lib/shipping/functions";
+import { normalizeShipmentStage } from "@/lib/shipping/status";
 import { addMessage, addToBag, setLineQuantity, type AddMode, type AddOutcome } from "./bag";
 import { dbErrorKey, isNetworkFailure, NETWORK_MESSAGE, orderErrorMessage } from "./errors";
 import {
@@ -92,6 +94,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const fetchCatalogue = useServerFn(getPublicCatalogue);
+  const fetchCustomerShipmentStatuses = useServerFn(getCustomerShipmentStatuses);
 
   const loadCatalogue = async () => {
     const result = await fetchCatalogue();
@@ -154,8 +157,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       console.error("[YEARTH] Could not load customer orders:", error.message);
       return;
     }
-    setOrders(((data ?? []) as unknown as OrderRow[]).map(toOrder));
-  }, []);
+    const rows = (data ?? []) as unknown as OrderRow[];
+    let shipmentRows: Awaited<ReturnType<typeof fetchCustomerShipmentStatuses>> = [];
+    try {
+      shipmentRows = await fetchCustomerShipmentStatuses();
+    } catch (statusError) {
+      // Keep order history available even if the private shipment-status lookup is temporarily down.
+      console.error("[YEARTH] Could not load customer shipment stages:", statusError instanceof Error ? statusError.message : statusError);
+    }
+    const shipmentByOrder = new Map<string, (typeof shipmentRows)[number]>(shipmentRows.map((row) => [row.order_id, row] as const));
+    setOrders(rows.map((row) => {
+      const order = toOrder(row);
+      const shipment = shipmentByOrder.get(row.id);
+      return {
+        ...order,
+        shippingStatus: normalizeShipmentStage(shipment?.fulfilment_status, row.status),
+        shippingStatusSource: shipment?.status_source ?? null,
+        shippingStatusAt: shipment?.last_tracking_event_at ?? shipment?.updated_at ?? order.deliveredAt ?? order.shippedAt ?? null,
+        shippingLastEventLabel: shipment?.last_tracking_status ?? null,
+        tracking: row.tracking_number ?? shipment?.awb ?? order.tracking ?? null,
+      };
+    }));
+  }, [fetchCustomerShipmentStatuses]);
 
   const checkPromo = async (code: string) => {
     const { data, error } = await supabase.rpc("check_promo_code", { p_code: code });

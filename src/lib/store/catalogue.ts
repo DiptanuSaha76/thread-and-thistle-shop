@@ -1,3 +1,4 @@
+import type { ShipmentStage } from "@/lib/shipping/status";
 import black from "@/assets/black.jpg";
 import white from "@/assets/off-white.jpg";
 import brown from "@/assets/brown.jpg";
@@ -186,6 +187,11 @@ export type Order = {
   status: "Awaiting payment" | "Processing" | "Shipped" | "Delivered" | "Cancelled";
   dbId?: string;
   tracking?: string | null;
+  /** Detailed fulfilment state mirrored from the admin / Shiprocket shipment record. */
+  shippingStatus?: ShipmentStage;
+  shippingStatusSource?: string | null;
+  shippingStatusAt?: string | null;
+  shippingLastEventLabel?: string | null;
   /** When the order was marked Shipped / Delivered (recorded by the database; null if not recorded). */
   shippedAt?: string | null;
   deliveredAt?: string | null;

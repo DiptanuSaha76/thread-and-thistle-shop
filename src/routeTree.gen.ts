@@ -31,6 +31,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as VerifyPhoneRouteImport } from './routes/verify-phone'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as ApiShipmentEventsRouteImport } from './routes/api.shipment-events'
 import { Route as CollectionsIndexRouteImport } from './routes/collections.index'
 import { Route as CollectionsSlugRouteImport } from './routes/collections.$slug'
 import { Route as ProductsSlugRouteImport } from './routes/products.$slug'
@@ -145,6 +146,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const ApiShipmentEventsRoute = ApiShipmentEventsRouteImport.update({
+  id: '/api/shipment-events',
+  path: '/api/shipment-events',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CollectionsIndexRoute = CollectionsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -183,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
   '/verify-phone': typeof VerifyPhoneRoute
+  '/api/shipment-events': typeof ApiShipmentEventsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
   '/admin/': typeof AdminIndexRoute
@@ -208,6 +215,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
   '/verify-phone': typeof VerifyPhoneRoute
+  '/api/shipment-events': typeof ApiShipmentEventsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
   '/admin': typeof AdminIndexRoute
@@ -236,6 +244,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/verify': typeof VerifyRoute
   '/verify-phone': typeof VerifyPhoneRoute
+  '/api/shipment-events': typeof ApiShipmentEventsRoute
   '/collections/$slug': typeof CollectionsSlugRoute
   '/products/$slug': typeof ProductsSlugRoute
   '/admin/': typeof AdminIndexRoute
@@ -265,6 +274,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/verify'
     | '/verify-phone'
+    | '/api/shipment-events'
     | '/collections/$slug'
     | '/products/$slug'
     | '/admin/'
@@ -290,6 +300,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/verify'
     | '/verify-phone'
+    | '/api/shipment-events'
     | '/collections/$slug'
     | '/products/$slug'
     | '/admin'
@@ -317,6 +328,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/verify'
     | '/verify-phone'
+    | '/api/shipment-events'
     | '/collections/$slug'
     | '/products/$slug'
     | '/admin/'
@@ -345,6 +357,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   VerifyRoute: typeof VerifyRoute
   VerifyPhoneRoute: typeof VerifyPhoneRoute
+  ApiShipmentEventsRoute: typeof ApiShipmentEventsRoute
   ProductsSlugRoute: typeof ProductsSlugRoute
 }
 
@@ -504,6 +517,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/api/shipment-events': {
+      id: '/api/shipment-events'
+      path: '/api/shipment-events'
+      fullPath: '/api/shipment-events'
+      preLoaderRoute: typeof ApiShipmentEventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/collections/': {
       id: '/collections/'
       path: '/'
@@ -574,6 +594,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   VerifyRoute: VerifyRoute,
   VerifyPhoneRoute: VerifyPhoneRoute,
+  ApiShipmentEventsRoute: ApiShipmentEventsRoute,
   ProductsSlugRoute: ProductsSlugRoute,
 }
 export const routeTree = rootRouteImport

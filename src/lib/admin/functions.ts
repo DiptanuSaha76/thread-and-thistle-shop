@@ -31,6 +31,7 @@ export const getAdminData = createServerFn({ method: 'POST' }).middleware([requi
     supabaseAdmin.from('store_settings').select('*').eq('id', 1).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
     supabaseAdmin.from('product_variants').select('*'),
     supabaseAdmin.from('product_reviews').select('id, product_id, rating, title, body, display_name, status, created_at').order('created_at', { ascending: false }).limit(200),
+    supabaseAdmin.from('shiprocket_fulfillments').select('*'),
   ]);
   const queryNames = [
     'products',
@@ -40,6 +41,7 @@ export const getAdminData = createServerFn({ method: 'POST' }).middleware([requi
     'store_settings',
     'product_variants',
     'product_reviews',
+    'shiprocket_fulfillments',
   ] as const;
 
   for (const [index, result] of results.entries()) {
@@ -67,7 +69,7 @@ export const getAdminData = createServerFn({ method: 'POST' }).middleware([requi
       unit_cost: amountFromDb(i.unit_cost),
     })),
   }));
-  return { products: results[0].data ?? [], orders, users: results[2].data ?? [], messages: results[3].data ?? [], settings: results[4].data, variants: results[5].data ?? [], reviews: results[6].data ?? [] };
+  return { products: results[0].data ?? [], orders, users: results[2].data ?? [], messages: results[3].data ?? [], settings: results[4].data, variants: results[5].data ?? [], reviews: results[6].data ?? [], fulfilments: results[7].data ?? [] };
 });
 export const saveProduct = createServerFn({ method: 'POST' }).middleware([requireAdmin]).inputValidator(productInput).handler(async ({ data, context }) => {
   const { id, ...raw } = data;

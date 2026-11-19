@@ -1525,9 +1525,24 @@
   color: var(--warning);
   background: color-mix(in oklab, var(--warning) 6%, var(--background));
 }
-.status-cancelled {
+.status-cancelled,
+.status-rto-initiated {
   color: var(--danger);
   background: color-mix(in oklab, var(--danger) 6%, var(--background));
+}
+.status-awaiting-payment,
+.status-processing,
+.status-ready-to-ship,
+.status-ndr-action-required {
+  color: var(--warning);
+  background: color-mix(in oklab, var(--warning) 6%, var(--background));
+}
+.status-pickup-scheduled,
+.status-picked-up,
+.status-in-transit,
+.status-out-for-delivery {
+  color: var(--info);
+  background: color-mix(in oklab, var(--info) 6%, var(--background));
 }
 .order-product {
   display: grid;
@@ -2921,3 +2936,16 @@
   .pin-result { animation: none; }
 }
 
+
+
+/* Customer My Orders: horizontally scrollable detailed shipping timeline. */
+.order-progress-scroller {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.order-progress.customer-shipping-progress {
+  grid-template-columns: repeat(9, minmax(70px, 1fr));
+  min-width: 630px;
+}

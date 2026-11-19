@@ -161,6 +161,151 @@ export type Database = {
           },
         ]
       }
+      shiprocket_fulfillments: {
+        Row: {
+          awb: string | null
+          courier_id: number | null
+          courier_name: string | null
+          created_at: string
+          details_sent_at: string | null
+          fulfilment_status: string
+          label_url: string | null
+          manifest_url: string | null
+          order_id: string
+          shiprocket_reference: string | null
+          status_source: string
+          pickup_status: string | null
+          parcel_weight_kg: number | null
+          parcel_length_cm: number | null
+          parcel_breadth_cm: number | null
+          parcel_height_cm: number | null
+          parcel_measured_at: string | null
+          shiprocket_order_id: number | null
+          shiprocket_shipment_id: number | null
+          order_create_attempted_at: string | null
+          order_create_error: string | null
+          last_tracking_status: string | null
+          last_tracking_status_id: number | null
+          last_tracking_event_at: string | null
+          last_ndr_action: string | null
+          last_ndr_action_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          awb?: string | null
+          courier_id?: number | null
+          courier_name?: string | null
+          created_at?: string
+          details_sent_at?: string | null
+          fulfilment_status?: string
+          label_url?: string | null
+          manifest_url?: string | null
+          order_id: string
+          shiprocket_reference?: string | null
+          status_source?: string
+          pickup_status?: string | null
+          parcel_weight_kg?: number | null
+          parcel_length_cm?: number | null
+          parcel_breadth_cm?: number | null
+          parcel_height_cm?: number | null
+          parcel_measured_at?: string | null
+          shiprocket_order_id?: number | null
+          shiprocket_shipment_id?: number | null
+          order_create_attempted_at?: string | null
+          order_create_error?: string | null
+          last_tracking_status?: string | null
+          last_tracking_status_id?: number | null
+          last_tracking_event_at?: string | null
+          last_ndr_action?: string | null
+          last_ndr_action_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          awb?: string | null
+          courier_id?: number | null
+          courier_name?: string | null
+          created_at?: string
+          details_sent_at?: string | null
+          fulfilment_status?: string
+          label_url?: string | null
+          manifest_url?: string | null
+          order_id?: string
+          shiprocket_reference?: string | null
+          status_source?: string
+          pickup_status?: string | null
+          parcel_weight_kg?: number | null
+          parcel_length_cm?: number | null
+          parcel_breadth_cm?: number | null
+          parcel_height_cm?: number | null
+          parcel_measured_at?: string | null
+          shiprocket_order_id?: number | null
+          shiprocket_shipment_id?: number | null
+          order_create_attempted_at?: string | null
+          order_create_error?: string | null
+          last_tracking_status?: string | null
+          last_tracking_status_id?: number | null
+          last_tracking_event_at?: string | null
+          last_ndr_action?: string | null
+          last_ndr_action_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shiprocket_fulfillments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: true
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shiprocket_webhook_events: {
+        Row: {
+          event_key: string
+          order_id: string | null
+          awb: string
+          current_status: string | null
+          current_status_id: number | null
+          shipment_status: string | null
+          shipment_status_id: number | null
+          event_at: string | null
+          location: string | null
+          received_at: string
+        }
+        Insert: {
+          event_key: string
+          order_id?: string | null
+          awb: string
+          current_status?: string | null
+          current_status_id?: number | null
+          shipment_status?: string | null
+          shipment_status_id?: number | null
+          event_at?: string | null
+          location?: string | null
+          received_at?: string
+        }
+        Update: {
+          event_key?: string
+          order_id?: string | null
+          awb?: string
+          current_status?: string | null
+          current_status_id?: number | null
+          shipment_status?: string | null
+          shipment_status_id?: number | null
+          event_at?: string | null
+          location?: string | null
+          received_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shiprocket_webhook_events_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_payments: {
         Row: {
           amount: number
@@ -548,6 +693,10 @@ export type Database = {
           primary_colour: string
           rating: number
           review_count: number
+          shipping_weight_kg: number | null
+          shipping_length_cm: number | null
+          shipping_breadth_cm: number | null
+          shipping_height_cm: number | null
           slug: string
           sort_order: number
           updated_at: string
@@ -570,6 +719,10 @@ export type Database = {
           primary_colour?: string
           rating?: number
           review_count?: number
+          shipping_weight_kg?: number | null
+          shipping_length_cm?: number | null
+          shipping_breadth_cm?: number | null
+          shipping_height_cm?: number | null
           slug: string
           sort_order?: number
           updated_at?: string
@@ -592,6 +745,10 @@ export type Database = {
           primary_colour?: string
           rating?: number
           review_count?: number
+          shipping_weight_kg?: number | null
+          shipping_length_cm?: number | null
+          shipping_breadth_cm?: number | null
+          shipping_height_cm?: number | null
           slug?: string
           sort_order?: number
           updated_at?: string

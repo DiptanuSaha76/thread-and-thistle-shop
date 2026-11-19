@@ -1,4 +1,10 @@
 import { lineKey, products, type CartLine, type Order } from "./catalogue";
+import {
+  normalizeShipmentStage,
+  shipmentStageClass,
+  shipmentStageLabel,
+  type ShipmentStage,
+} from "@/lib/shipping/status";
 
 /**
  * Pure helpers for orders and the saved bag, shared by the store (state.tsx)
@@ -81,6 +87,10 @@ export const toOrder = (o: OrderRow): Order => {
     discount: amountFromDb(o.discount),
     total: amountFromDb(o.total),
     tracking: o.tracking_number,
+    shippingStatus: normalizeShipmentStage(null, status),
+    shippingStatusSource: null,
+    shippingStatusAt: o.delivered_at ?? o.shipped_at ?? null,
+    shippingLastEventLabel: null,
     shippedAt: o.shipped_at ?? null,
     deliveredAt: o.delivered_at ?? null,
     paymentMethod: !online
@@ -100,29 +110,89 @@ export const toOrder = (o: OrderRow): Order => {
 };
 
 export type TimelineStep = {
-  label: "Order Placed" | "Processed" | "Shipped" | "Delivered";
+  label: string;
   done: boolean;
   /** A real recorded time, or null. Never calculated. */
   at: string | null;
-  /** Shown when there is no date: "—" (not reached), "Done" or "Date not recorded". */
+  /** Shown when there is no date: "—", "Done", or "Current". */
   note: string;
 };
 
+export function customerOrderStatus(order: Pick<Order, "status" | "shippingStatus">): string {
+  if (order.status === "Awaiting payment") return "Awaiting payment";
+  const stage = order.shippingStatus ?? normalizeShipmentStage(null, order.status);
+  return shipmentStageLabel(stage);
+}
+
+export function customerOrderStatusClass(order: Pick<Order, "status" | "shippingStatus">): string {
+  return `status-${shipmentStageClass(customerOrderStatus(order))}`;
+}
+
+/** Customers may cancel only before pickup has been requested / parcel dispatched. */
+export function canCustomerCancelOrder(order: Pick<Order, "status" | "shippingStatus" | "tracking">): boolean {
+  if (order.tracking) return false;
+  const status = customerOrderStatus(order);
+  return status === "Awaiting payment" || status === "Processing";
+}
+
 /**
- * The My Orders timeline, from recorded data only: the order time, and the shipped /
- * delivered times the database records when the status changes. Nothing is estimated.
- * "Processed" has no separate event in the database, so it shows no date.
+ * Customer progress mirrors the exact admin shipping stage. Dates are shown only
+ * when YEARTH has a timestamp for that current stage; older completed steps say Done.
  */
-export function orderTimeline(order: Pick<Order, "status" | "createdAt" | "shippedAt" | "deliveredAt">): TimelineStep[] {
-  const delivered = order.status === "Delivered";
-  const shipped = delivered || order.status === "Shipped";
-  const missing = (done: boolean) => (done ? "Date not recorded" : "—");
-  return [
-    { label: "Order Placed", done: true, at: order.createdAt, note: "" },
-    { label: "Processed", done: shipped, at: null, note: shipped ? "Done" : "—" },
-    { label: "Shipped", done: shipped, at: shipped ? (order.shippedAt ?? null) : null, note: missing(shipped) },
-    { label: "Delivered", done: delivered, at: delivered ? (order.deliveredAt ?? null) : null, note: missing(delivered) },
+export function orderTimeline(
+  order: Pick<Order, "status" | "shippingStatus" | "createdAt" | "shippedAt" | "deliveredAt" | "shippingStatusAt">,
+): TimelineStep[] {
+  const stage: ShipmentStage = order.shippingStatus ?? normalizeShipmentStage(null, order.status);
+  if (stage === "cancelled") {
+    return [
+      { label: "Order Placed", done: true, at: order.createdAt, note: "" },
+      { label: "Cancelled", done: true, at: order.shippingStatusAt ?? null, note: order.shippingStatusAt ? "" : "Status updated" },
+    ];
+  }
+
+  const flow: Array<{ stage: ShipmentStage; label: string }> = [
+    { stage: "processing", label: "Processing" },
+    { stage: "ready_to_ship", label: "Ready to ship" },
+    { stage: "pickup_scheduled", label: "Pickup scheduled" },
+    { stage: "picked_up", label: "Picked up" },
+    { stage: "in_transit", label: "In transit" },
+    { stage: "out_for_delivery", label: "Out for delivery" },
+    { stage: "delivered", label: "Delivered" },
   ];
+  const progressStage: ShipmentStage =
+    stage === "ndr_action_required" ? "out_for_delivery"
+      : stage === "rto_initiated" ? "in_transit"
+      : stage;
+  const currentIndex = Math.max(0, flow.findIndex((item) => item.stage === progressStage));
+
+  const steps: TimelineStep[] = [
+    { label: "Order Placed", done: true, at: order.createdAt, note: "" },
+    ...flow.map((item, index) => {
+      const done = index <= currentIndex;
+      const isSpecialStage = stage === "ndr_action_required" || stage === "rto_initiated";
+      const isCurrent = item.stage === progressStage && !isSpecialStage;
+      const fallbackTime = item.stage === "in_transit" ? order.shippedAt ?? null
+        : item.stage === "delivered" ? order.deliveredAt ?? null
+        : null;
+      const at = isCurrent ? (order.shippingStatusAt ?? fallbackTime) : fallbackTime;
+      return {
+        label: item.label,
+        done,
+        at: done ? at : null,
+        note: !done ? "—" : at ? "" : isCurrent ? "Current" : "Done",
+      };
+    }),
+  ];
+
+  if (stage === "ndr_action_required" || stage === "rto_initiated") {
+    steps.push({
+      label: shipmentStageLabel(stage),
+      done: true,
+      at: order.shippingStatusAt ?? null,
+      note: order.shippingStatusAt ? "" : "Current",
+    });
+  }
+  return steps;
 }
 
 /** Keeps only well-formed cart lines for products that exist, max 10 each. */

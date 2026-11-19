@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import {
   Heart,
   ChevronLeft,
@@ -18,6 +19,7 @@ import { Breadcrumb, Swatches, Quantity, Benefits, Related, Modal } from "./shar
 import { useStore } from "@/lib/store/state";
 import { inBagAfter, MAX_PER_LINE, remainingFor } from "@/lib/store/bag";
 import { Reviews } from "./reviews";
+import { checkShippingServiceability } from "@/lib/shipping/functions";
 import { money, sizes, imageFor, productColours, productSizes, stock, type Product } from "@/lib/store/catalogue";
 
 export function ProductDetail({ product }: { product: Product }) {
@@ -30,12 +32,17 @@ export function ProductDetail({ product }: { product: Product }) {
     [guide, setGuide] = useState(false),
     [index, setIndex] = useState(0);
 
-  // Demo-only PIN checker: validates the format and simulates loading.
-  // It does not check real courier serviceability or delivery dates.
+  const checkServiceability = useServerFn(checkShippingServiceability);
   const [pin, setPin] = useState(""),
     [pinError, setPinError] = useState(""),
     [checkingPin, setCheckingPin] = useState(false),
-    [pinChecked, setPinChecked] = useState(false);
+    [pinQuotes, setPinQuotes] = useState<{
+      pickupPincode: string;
+      deliveryPincode: string;
+      weightKg: number;
+      parcelEstimate: { weightKg: number; lengthCm: number; breadthCm: number; heightCm: number };
+      couriers: Array<{ courierId: number; courierName: string; rate: number | null; estimatedDays: string | null; etd: string | null; codAvailable: boolean }>;
+    } | null>(null);
 
   const extra = (product.images ?? []).filter((x) => x !== imageFor(product, colour));
   const images = [imageFor(product, colour), ...extra, product.image]
@@ -45,19 +52,31 @@ export function ProductDetail({ product }: { product: Product }) {
   const available = stock(product, colour, size) > 0;
 
   const checkPin = async () => {
-    if (!/^\d{6}$/.test(pin)) {
+    if (!/^[1-9]\d{5}$/.test(pin)) {
       setPinError("Please enter a valid 6-digit PIN code.");
-      setPinChecked(false);
+      setPinQuotes(null);
       return;
     }
 
     setPinError("");
-    setPinChecked(false);
+    setPinQuotes(null);
     setCheckingPin(true);
-    // Intentional short delay for the demo loading animation only.
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    setCheckingPin(false);
-    setPinChecked(true);
+    try {
+      const result = await checkServiceability({
+        data: {
+          deliveryPincode: pin,
+          cod: true,
+          items: [{ productId: product.id, quantity: pick }],
+          declaredValue: product.price * pick,
+        },
+      });
+      setPinQuotes(result);
+      if (!result.couriers.length) setPinError("No Shiprocket courier is currently available for this PIN code and parcel estimate.");
+    } catch (error) {
+      setPinError(error instanceof Error ? error.message : "Delivery availability could not be checked.");
+    } finally {
+      setCheckingPin(false);
+    }
   };
 
   // How many more of this colour/size can go in the bag (stock and the per-item limit,
@@ -214,7 +233,7 @@ export function ProductDetail({ product }: { product: Product }) {
               </span>
             </div>
 
-            {/* Demo-only PIN UI; no live delivery-service lookup is performed. */}
+            {/* Live Shiprocket courier serviceability lookup; credentials stay on the server. */}
             <section className="pin-checker" aria-labelledby="pin-checker-title">
               <label id="pin-checker-title" className="pin-checker-label" htmlFor="delivery-pin">
                 Check delivery availability
@@ -231,11 +250,11 @@ export function ProductDetail({ product }: { product: Product }) {
                     placeholder="Enter 6-digit PIN code"
                     value={pin}
                     aria-invalid={Boolean(pinError)}
-                    aria-describedby={pinError ? "pin-error" : "pin-demo-note"}
+                    aria-describedby={pinError ? "pin-error" : "pin-note"}
                     onChange={(event) => {
                       setPin(event.target.value.replace(/\D/g, "").slice(0, 6));
                       setPinError("");
-                      setPinChecked(false);
+                      setPinQuotes(null);
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -264,23 +283,25 @@ export function ProductDetail({ product }: { product: Product }) {
               ) : checkingPin ? (
                 <div className="pin-loading" role="status" aria-live="polite">
                   <span className="pin-loading-track"><span /></span>
-                  <span>Running demo check…</span>
+                  <span>Checking courier availability…</span>
                 </div>
-              ) : pinChecked ? (
+              ) : pinQuotes ? (
                 <div className="pin-result" role="status" aria-live="polite">
                   <p className="pin-feedback pin-feedback-success">
-                    <Check size={15} /> Demo check complete for PIN {pin}.
+                    <Check size={15} /> Delivery serviceability checked for PIN {pin}.
                   </p>
-                  <p className="delivery pin-shipping-text">
-                    <Truck size={17} /> Ships in 1–2 days · Pan India delivery
+                  <p className="pin-demo-note" id="pin-note">
+                    Pickup PIN {pinQuotes.pickupPincode} · Estimated parcel weight {pinQuotes.weightKg.toFixed(3)} kg.
                   </p>
-                  <p className="pin-demo-note" id="pin-demo-note">
-                    Demo preview only — actual delivery serviceability and timelines have not been verified.
-                  </p>
+                  {pinQuotes.couriers.slice(0, 3).map((courier) => (
+                    <p className="delivery pin-shipping-text" key={courier.courierId}>
+                      <Truck size={17} /> {courier.courierName}{courier.estimatedDays ? ` · ${courier.estimatedDays} days` : ""}{courier.rate !== null ? ` · ₹${courier.rate.toFixed(2)}` : ""}
+                    </p>
+                  ))}
                 </div>
               ) : (
-                <p className="pin-demo-note" id="pin-demo-note">
-                  UI demo only. Enter any 6-digit PIN to preview the shipping message; no live serviceability check is made.
+                <p className="pin-demo-note" id="pin-note">
+                  Enter your PIN to check live courier availability and indicative shipping rates.
                 </p>
               )}
             </section>

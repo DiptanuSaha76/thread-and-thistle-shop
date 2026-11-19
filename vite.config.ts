@@ -10,5 +10,10 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    allowedHosts: [
+      "accept-steve-wave-edt.trycloudflare.com",
+      "trademarks-driver-independently-retail.trycloudflare.com",
+    ],
   },
+  
 });

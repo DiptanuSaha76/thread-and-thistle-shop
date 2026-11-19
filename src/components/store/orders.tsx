@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
@@ -9,7 +9,13 @@ import { Modal } from "./shared";
 import { useStore } from "@/lib/store/state";
 import { products, imageFor, money, type Order } from "@/lib/store/catalogue";
 import { getOrderTracking } from "@/lib/shipping/functions";
-import { orderTimeline } from "@/lib/store/orders";
+import {
+  canCustomerCancelOrder,
+  customerOrderStatus,
+  customerOrderStatusClass,
+  orderTimeline,
+} from "@/lib/store/orders";
+import { CUSTOMER_ORDER_STATUS_TABS } from "@/lib/shipping/status";
 export function OrdersPage() {
   const store = useStore(),
     navigate = useNavigate();
@@ -17,7 +23,15 @@ export function OrdersPage() {
     [detail, setDetail] = useState<Order | null>(null),
     [cancel, setCancel] = useState<Order | null>(null),
     [tracking, setTracking] = useState(false);
-  const orders = store.orders.filter((o) => tab === "All Orders" || o.status === tab);
+  // Webhooks update shipment stages in Supabase. Refresh while this screen is open
+  // so customer status follows the admin selection / Shiprocket webhook automatically.
+  useEffect(() => {
+    void store.refreshOrders();
+    const interval = window.setInterval(() => void store.refreshOrders(), 30_000);
+    return () => window.clearInterval(interval);
+  }, [store.refreshOrders]);
+
+  const orders = store.orders.filter((o) => tab === "All Orders" || customerOrderStatus(o) === tab);
   const repeat = (o: Order) => {
     // One message for the whole order instead of one per item.
     const outcomes = o.items.map((l) =>
@@ -53,7 +67,7 @@ export function OrdersPage() {
         Orders placed with your signed-in account.
       </p>
       <nav className="order-tabs" aria-label="Order status">
-        {["All Orders", "Processing", "Shipped", "Delivered", "Cancelled"].map((s) => (
+        {CUSTOMER_ORDER_STATUS_TABS.map((s) => (
           <Button
             key={s}
             variant={s === tab ? "default" : "outline"}
@@ -80,7 +94,7 @@ export function OrdersPage() {
                   })}
                 </small>
               </div>
-              <span className={`status status-${o.status.toLowerCase().replace(/\s+/g, "-")}`}>{o.status}</span>
+              <span className={`status ${customerOrderStatusClass(o)}`}>{customerOrderStatus(o)}</span>
             </div>
             {o.items.map((l, i) => {
               const p = products.find((p) => p.id === l.productId);
@@ -109,15 +123,39 @@ export function OrdersPage() {
                 Total <b>{money(o.total)}</b>
               </span>
               <div>
-                {o.status === "Processing" || o.status === "Awaiting payment" ? (
-                  <Button variant="outline" onClick={() => setCancel(o)}>
-                    Cancel Order
-                  </Button>
-                ) : o.status === "Shipped" ? (
-                  <Button onClick={() => open(o, true)}>
-                    <Truck />
-                    Track Order
-                  </Button>
+                {canCustomerCancelOrder(o) ? (
+                  <>
+                    <Button variant="outline" onClick={() => setCancel(o)}>
+                      Cancel Order
+                    </Button>
+                    {o.tracking && (
+                      <Button onClick={() => open(o, true)}>
+                        <Truck />
+                        Track Order
+                      </Button>
+                    )}
+                  </>
+                ) : customerOrderStatus(o) === "Delivered" ? (
+                  <>
+                    {o.tracking && (
+                      <Button variant="outline" onClick={() => open(o, true)}>
+                        <Truck />
+                        View delivery tracking
+                      </Button>
+                    )}
+                    <Button onClick={() => repeat(o)}>
+                      Buy Again <ArrowRight />
+                    </Button>
+                  </>
+                ) : ["Ready to ship", "Pickup scheduled", "Picked up", "In transit", "Out for delivery", "NDR — action required", "RTO initiated"].includes(customerOrderStatus(o)) ? (
+                  o.tracking ? (
+                    <Button onClick={() => open(o, true)}>
+                      <Truck />
+                      Track Order
+                    </Button>
+                  ) : (
+                    <span className="self-center text-xs text-muted-foreground">Tracking details are being linked.</span>
+                  )
                 ) : (
                   <Button onClick={() => repeat(o)}>
                     Buy Again <ArrowRight />
@@ -150,7 +188,7 @@ export function OrdersPage() {
       >
         {detail && (
           <>
-            <span className={`status status-${detail.status.toLowerCase().replace(/\s+/g, "-")}`}>{detail.status}</span>
+            <span className={`status ${customerOrderStatusClass(detail)}`}>{customerOrderStatus(detail)}</span>
             <Progress order={detail} />
             {tracking && <TrackingDetails order={detail} />}
             {detail.items.map((l, i) => {
@@ -235,7 +273,8 @@ function TrackingDetails({ order }: { order: Order }) {
     queryKey: ["order-tracking", order.dbId],
     queryFn: () => fetchTracking({ data: { orderId: order.dbId ?? "" } }),
     enabled: !!order.dbId,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
     retry: false,
   });
   if (!order.dbId) return <p>Tracking details aren’t available for this order.</p>;
@@ -288,20 +327,29 @@ function TrackingDetails({ order }: { order: Order }) {
 }
 
 function Progress({ order }: { order: Order }) {
-  // Only recorded times are shown; steps without a recorded time say so instead of guessing.
+  // Only recorded timestamps are shown. Detailed steps mirror the admin shipping status.
+  const currentStatus = customerOrderStatus(order);
+  const isException = currentStatus === "NDR — action required" || currentStatus === "RTO initiated";
   return (
-    <div className={`order-progress ${order.status === "Cancelled" ? "cancelled" : ""}`}>
-      {orderTimeline(order).map((step) => (
-        <div key={step.label} className={step.done ? "complete" : ""}>
-          <span>{step.done ? <Check size={12} /> : <span />}</span>
-          <b>{step.label}</b>
-          <small>
-            {step.at
-              ? new Date(step.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
-              : step.note}
-          </small>
-        </div>
-      ))}
+    <div className="order-progress-scroller">
+      <div className={`order-progress customer-shipping-progress ${currentStatus === "Cancelled" ? "cancelled" : ""}`}>
+        {orderTimeline(order).map((step) => (
+          <div key={step.label} className={step.done ? "complete" : ""}>
+            <span>{step.done ? <Check size={12} /> : <span />}</span>
+            <b>{step.label}</b>
+            <small>
+              {step.at
+                ? new Date(step.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+                : step.note}
+            </small>
+          </div>
+        ))}
+      </div>
+      {isException && (
+        <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="status">
+          {currentStatus}{order.shippingLastEventLabel ? ` · ${order.shippingLastEventLabel}` : ""}
+        </p>
+      )}
     </div>
   );
 }
